@@ -1,0 +1,7 @@
+# 백엔드
+
+backend/go_backend/main_backend/.env
+
+# 프론트엔드
+frontend/react_frontend/main_frontend/node_modules
+frontend/react_frontend/main_frontend/.env
