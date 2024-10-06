@@ -6,6 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/kimdwan/logan_drive/settings"
 	"github.com/kimdwan/logan_drive/src/middlewares"
+	"github.com/kimdwan/logan_drive/src/pkgs/routes"
 )
 
 func init() {
@@ -23,6 +24,9 @@ func main() {
 	router := gin.Default()
 	router.Use(gin.Logger())
 	router.Use(middlewares.CorsMiddleware())
+
+	// 라우터 연결
+	routes.UserRouter(router)
 
 	router.Run(port)
 }
