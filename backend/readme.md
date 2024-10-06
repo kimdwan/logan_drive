@@ -9,7 +9,4 @@
 
 1. go 
 
-
-2. postgres
-- 유저의 모든 권한을 가져가는 명령어
-REVOKE ALL PRIVILEGES ON SCHEMA "스키마이름" FROM "user이름"
+- 

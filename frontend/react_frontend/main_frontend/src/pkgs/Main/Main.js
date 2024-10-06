@@ -1,9 +1,16 @@
-
+import "./assets/css/Main.css"
+import { useContext } from "react"
+import { MainContext } from "../../App"
+import { MainUser, MainLogin } from "./components"
 
 export const Main = () => {
+  const { computerNumber, setComputerNumber } = useContext(MainContext)
+
   return (
-    <div>
-      메인 페이지 입니다.
+    <div className = "mainContainer">
+      {
+        computerNumber ? <MainUser /> : <MainLogin setComputerNumber = {setComputerNumber} />
+      }
     </div>
   )
 }
