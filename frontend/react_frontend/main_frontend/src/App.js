@@ -1,6 +1,6 @@
 import { createContext } from "react";
 import { BrowserRouter as Routers, Routes, Route } from "react-router-dom";
-import { Main } from "./pkgs";
+import { Main, SignUp } from "./pkgs";
 import { LoadComputerNumber } from "./settings";
 
 export const MainContext = createContext()
@@ -15,6 +15,7 @@ function App() {
 
           <Routes>
             <Route path = "/" element = {<Main />} />
+            <Route path = "/signup/*" element = {<SignUp />} />
           </Routes>
 
         </Routers>

@@ -8,3 +8,12 @@
 
 - setting 폴더 생성 
 - Main 폴더 생성
+
+3. 1008
+
+- login 페이지 완성
+
+4. 1015
+
+- signup 폴더 생성
+- signupterm 페이지 완성

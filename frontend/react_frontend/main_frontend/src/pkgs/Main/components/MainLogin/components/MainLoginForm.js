@@ -1,7 +1,8 @@
-import { useMainLoginFormHook } from "../hooks"
+import { useMainLoginClickSignUpBtnHook, useMainLoginFormHook } from "../hooks"
 
 export const MainLoginForm = ({ setComputerNumber }) => {
   const { register, handleSubmit, errors, onSubmit } = useMainLoginFormHook(setComputerNumber)
+  const { clickSignUpBtn } = useMainLoginClickSignUpBtnHook()
 
   return (
     <div className = "mainLoginFormContainer">
@@ -92,7 +93,10 @@ export const MainLoginForm = ({ setComputerNumber }) => {
 
           {/* 회원가입으로 이동시켜주는 컴퍼넌트 */}
           <div className = "mainLoginFormSignUpBtnBox">
-            <button className = "mainLoginFormSignUpBtn">
+            <button 
+            type = "button"
+            onClick = {clickSignUpBtn}
+            className = "mainLoginFormSignUpBtn">
               회원가입
             </button>
           </div>
