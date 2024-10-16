@@ -17,3 +17,7 @@
 
 - signup 폴더 생성
 - signupterm 페이지 완성
+
+5. 1016
+
+- signup에 form 로직 완성
