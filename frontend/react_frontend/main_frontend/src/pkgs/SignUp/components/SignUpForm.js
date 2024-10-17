@@ -6,7 +6,7 @@ export const SignUpForm = () => {
   const { termAgree3 } = useSignUpGetTermAgree3Hook()
 
   // 폼에서 데이터를 뽑아오는 함수
-  const { register, handleSubmit, errors, onSubmit } = useSignUpFormHook()
+  const { register, handleSubmit, errors, onSubmit } = useSignUpFormHook(termAgree3)
 
   return (
     <div className = "signUpFormContainer">

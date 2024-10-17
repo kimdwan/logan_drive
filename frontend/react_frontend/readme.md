@@ -21,3 +21,8 @@
 5. 1016
 
 - signup에 form 로직 완성
+
+6. 1016
+
+- signup form 페이지 완성
+- signup navbar 페이지 완성
