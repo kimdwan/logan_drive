@@ -27,6 +27,7 @@ func main() {
 
 	// 라우터 연결
 	routes.UserRouter(router)
+	routes.AuthRouter(router)
 
 	router.Run(port)
 }
