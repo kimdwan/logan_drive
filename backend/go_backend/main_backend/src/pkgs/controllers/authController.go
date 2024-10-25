@@ -16,9 +16,9 @@ type AuthController interface {
 func AuthGetUserEmailAndNickNameController(ctx *gin.Context) {
 
 	var (
-		payload *dtos.Payload
-		// errorStatus int
-		err error
+		payload              *dtos.Payload
+		userNicknameAndEmail *dtos.AuthNicknameAndEmailDto
+		err                  error
 	)
 
 	// payload를 파싱하는 함수
@@ -29,5 +29,8 @@ func AuthGetUserEmailAndNickNameController(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, payload)
+	// 이메일과 닉네임을 가져오는 함수
+	userNicknameAndEmail = services.AuthGetUserEmailAndNickNameService(payload)
+
+	ctx.JSON(http.StatusOK, userNicknameAndEmail)
 }

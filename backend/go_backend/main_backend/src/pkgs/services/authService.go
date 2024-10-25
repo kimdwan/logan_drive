@@ -11,6 +11,7 @@ import (
 
 type AuthService interface {
 	AuthParsePayloadService(ctx *gin.Context) (*dtos.Payload, error)
+	AuthGetUserEmailAndNickNameService(payload *dtos.Payload) *dtos.AuthNicknameAndEmailDto
 }
 
 // payload를 제공하는 함수
@@ -28,4 +29,16 @@ func AuthParsePayloadService(ctx *gin.Context) (*dtos.Payload, error) {
 	}
 
 	return &payload, nil
+}
+
+// 유저의 이메일과 닉네임을 제공하는 함수
+func AuthGetUserEmailAndNickNameService(payload *dtos.Payload) *dtos.AuthNicknameAndEmailDto {
+
+	var (
+		userNicknameAndEmail dtos.AuthNicknameAndEmailDto
+	)
+	userNicknameAndEmail.Email = payload.Sub.Email
+	userNicknameAndEmail.Nickname = payload.Sub.Nickname
+
+	return &userNicknameAndEmail
 }
