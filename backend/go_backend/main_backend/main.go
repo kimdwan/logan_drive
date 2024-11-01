@@ -13,6 +13,7 @@ func init() {
 	settings.LoadDotenv()
 	settings.LoadDatabase()
 	settings.MigrateDatabase()
+	settings.UseAwsService()
 }
 
 func main() {

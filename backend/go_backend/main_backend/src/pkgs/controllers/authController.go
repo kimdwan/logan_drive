@@ -34,3 +34,5 @@ func AuthGetUserEmailAndNickNameController(ctx *gin.Context) {
 
 	ctx.JSON(http.StatusOK, userNicknameAndEmail)
 }
+
+// 프로필을 가져오는 로직
