@@ -15,5 +15,5 @@ func AuthRouter(router *gin.Engine) {
 	// 기본정보를 가져오는 라우터
 	authgetrouter := authrouter.Group("get")
 	authgetrouter.GET("detail", controllers.AuthGetUserEmailAndNickNameController)
-	authgetrouter.GET("profile")
+	authgetrouter.GET("profileImg", controllers.AuthGetUserProfileImgController)
 }

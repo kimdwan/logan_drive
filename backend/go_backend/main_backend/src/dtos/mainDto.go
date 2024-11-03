@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -77,6 +78,38 @@ func (p Payload) MakeJwtToken(jwt_tokens *[]string) error {
 		} else {
 			*jwt_tokens = append(*jwt_tokens, jwt_token)
 		}
+	}
+
+	return nil
+}
+
+// 이미지와 관련된 struct
+type ImgDataDto struct {
+	ImgBase64 string
+	ImgType   string
+}
+
+type ImgData interface {
+	CheckImgType() error
+}
+
+// 이미지 타입을 확인하는 함수
+func (i ImgDataDto) CheckImgType() error {
+
+	var (
+		img_type_systems = strings.Split(os.Getenv("DATABASE_USER_IMG_TYPE"), ",")
+		isAllowed        = false
+	)
+
+	for _, img_type := range img_type_systems {
+		if i.ImgType == img_type {
+			isAllowed = true
+			break
+		}
+	}
+
+	if !isAllowed {
+		return errors.New("이미지 타입을 다시 확인해주세요")
 	}
 
 	return nil
