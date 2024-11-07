@@ -1,0 +1,155 @@
+/* MainNavbar.css */
+
+.mainNavbarContainer {
+  width: 100%;
+  padding: 20px 20px;
+  background-color: #000;
+  color: #fff;
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  margin-bottom: 30px; /* 네브바와 로그인 폼 사이의 간격을 추가 */
+}
+
+.mainNavbarDivBox {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.mainNavbarImg {
+  width: 50px;
+  height: auto;
+  cursor: pointer;
+}
+
+.mainNavbarDiv {
+  display: flex;
+  flex-direction: column;
+}
+
+.mainNavbarDivH2Value {
+  font-size: 1.5em;
+  margin: 0;
+  font-weight: 700;
+}
+
+.mainNavbarDivH3Value {
+  font-size: 1em;
+  margin: 0;
+  font-weight: 400;
+}
+
+/* MainSupport.css */
+
+.mainSupportContainer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.5); /* 배경을 어둡게 처리하여 모달이 부각되도록 */
+}
+
+#mainSupportMainModar {
+  width: 400px;
+  padding: 20px;
+  border: none;
+  background: white;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  border-radius: 10px;
+  text-align: center;
+  font-family: Arial, sans-serif;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.mainSupportMainModarMainLogoImg {
+  width: 80px;
+  height: auto;
+  margin-bottom: 20px;
+}
+
+.mainSupportMainModarMainWelcomeMsgValue {
+  font-size: 1.8em;
+  font-weight: bold;
+  margin-bottom: 20px;
+  color: #333;
+}
+
+.mainSupportMainModarMainDetail {
+  width: 100%;
+  border: 1px solid #ddd;
+  padding: 15px;
+  border-radius: 8px;
+  text-align: left;
+  margin-top: 20px;
+}
+
+.mainSupportMainModarMainEmailDiv,
+.mainSupportMainModarBankAccountDiv,
+.mainSupportMainModarProfitDiv {
+  margin-bottom: 15px;
+}
+
+.mainSupportMainModarMainEmailWordBox,
+.mainSupportMainModarBankAccountWordBox,
+.mainSupportMainModarProfitWordBox {
+  margin-bottom: 5px;
+}
+
+.mainSupportMainModarMainEmailWordValue,
+.mainSupportMainModarBankAccounrWordValue,
+.mainSupportMainModarProfitWordValue {
+  font-size: 1.2em;
+  font-weight: 600;
+  color: #444;
+}
+
+.mainSupportMainModarMainEmailDetailValue,
+.mainSupportMainModarMainBankAccountDetailValue {
+  font-size: 1em;
+  color: #555;
+}
+
+.mainSupportMainModarProfitDetailBox textarea {
+  width: 100%;
+  height: 120px;
+  padding: 10px;
+  font-size: 0.9em;
+  color: #333;
+  background-color: #f9f9f9;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  resize: none;
+  line-height: 1.5;
+}
+
+.mainSupportModarCloseBtnDiv {
+  margin-top: 20px;
+  text-align: center;
+}
+
+.mainSupportModarCloseBtn {
+  padding: 10px 20px;
+  font-size: 1em;
+  background-color: #6c757d; /* 회색 버튼 */
+  color: #fff;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+}
+
+.mainSupportModarCloseBtn:hover {
+  background-color: #5a6268;
+}
