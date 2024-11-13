@@ -18,12 +18,14 @@ export const useMainUserGetUserDataHook = (computerNumber, setComputerNumber, go
         // 유저의 프로필을 가져오는 로직
         const userProfile = await getUserDataClass.GetData(profile_url)
   
-        if (userDetail && userProfile) {
+        if (userDetail) {
           setDetailData(userDetail)
           
           // 이미지 만들어주기
-          const img_url = `data:${userProfile["ImgType"]};charset=utf-8;base64,${userProfile["ImgBase64"]}`
-          setUserProfile(img_url)
+          if ( userProfile && userProfile["ImgType"] ) {
+            const img_url = `data:${userProfile["ImgType"]};charset=utf-8;base64,${userProfile["ImgBase64"]}`
+            setUserProfile(img_url)          }
+
         }
   
       }

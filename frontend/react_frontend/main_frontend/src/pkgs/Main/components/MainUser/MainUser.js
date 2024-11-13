@@ -11,10 +11,10 @@ export const MainUser = () => {
     <div className = "mainUserContainer">
       
       {/* 메인 프로필이 존재하는 컴퍼넌트 */}
-      <MainUserProfile computerNumber = {computerNumber} setComputerNumber = {setComputerNumber} />
+      <MainUserProfile computerNumber = { computerNumber } setComputerNumber = { setComputerNumber } />
 
       {/* 메인 푸터 컴퍼넌트 */}
-      <MainUserFooter />
+      <MainUserFooter computerNumber = { computerNumber } setComputerNumber = { setComputerNumber } />
 
     </div>
   )

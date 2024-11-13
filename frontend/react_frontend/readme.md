@@ -35,3 +35,4 @@
 8. 1113
 
 - mainUserProfile 페이지 완성
+- mainUserFooter 페이지 완성

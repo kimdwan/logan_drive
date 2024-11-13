@@ -16,3 +16,9 @@ REVOKE ALL PRIVILEGES ON SCHEMA "스키마이름" FROM "user이름"
 UPDATE "DATABASE"
 SET table_name = ''
 WHERE 조건 = '';
+
+3. 데이터 베이스에서 정보를 여러개 수정하기 위해서는 
+UPDATE "테이블 이름" 
+SET "column1" = '',
+"column2" = ''
+WHERE "columns" = ''

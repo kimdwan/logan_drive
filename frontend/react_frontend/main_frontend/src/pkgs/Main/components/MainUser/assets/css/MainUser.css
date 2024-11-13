@@ -1,0 +1,90 @@
+/* MainUserProfile.css */
+
+.mainUserProfileContainer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background-color: #ffffff; /* 배경색을 하얀색으로 변경 */
+  border-radius: 15px;
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.2);
+  max-width: 400px;
+  margin: auto;
+}
+
+.mainUserProfileImgDivBox {
+  width: 150px;
+  height: 150px;
+  margin-bottom: 20px;
+  background-color: #ffffff; /* 배경색을 하얀색으로 변경 */
+}
+
+.mainUserProfileImg {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  border: 4px solid #bbb;
+  object-fit: cover;
+}
+
+.mainUserProfileEmailAndNicknameDivBox {
+  text-align: center;
+  background-color: #ffffff; /* 배경색을 하얀색으로 변경 */
+  padding: 15px;
+  border-radius: 10px;
+}
+
+.mainUserProfileNickNameValue {
+  font-size: 1.6em; /* 크기 줄임 */
+  font-weight: bold;
+  color: #222;
+}
+
+.mainUserProfileEmailValue {
+  font-size: 1.1em; /* 크기 줄임 */
+  color: #444;
+}
+
+/* MainUserFooter.css */
+
+.mainUserFooterContainer {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 30px;
+  border-top: 2px solid #aaa;
+  margin-top: 50px;
+}
+
+.mainUserFooterDivBox {
+  display: flex;
+  gap: 30px;
+}
+
+.mainUserFooterGoMainBtn,
+.mainUserFooterLogoutBtn {
+  padding: 15px 30px;
+  font-size: 1.1em;
+  border: none;
+  border-radius: 8px;
+  transition: background-color 0.3s ease;
+  color: #fff;
+  cursor: pointer;
+}
+
+.mainUserFooterGoMainBtn {
+  background-color: #000000; /* 진한 회색 버튼 */
+}
+
+.mainUserFooterGoMainBtn:hover {
+  background-color: #333333; /* 더 어두운 진한 회색 */
+}
+
+.mainUserFooterLogoutBtn {
+  background-color: #b0b0b0; /* 연한 회색 버튼 */
+}
+
+.mainUserFooterLogoutBtn:hover {
+  background-color: #8c8c8c; /* 더 어두운 연한 회색 */
+}

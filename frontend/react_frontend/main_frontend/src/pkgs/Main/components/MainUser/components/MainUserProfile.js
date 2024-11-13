@@ -17,7 +17,7 @@ export const MainUserProfile = ({ computerNumber, setComputerNumber }) => {
       
       {/* 프로필 이미지가 들어가는 컴퍼넌트 */}
       <div className = "mainUserProfileImgDivBox">
-        <img className = "mainUserProfileImg" src = { userProfile ? userProfile : baseProfileImg } alt = "기본 프로필 이미지" style = {{ cursor : "pointer" }}/>
+        <img className = "mainUserProfileImg" src = { userProfile || baseProfileImg } alt = "기본 프로필 이미지" style = {{ cursor : "pointer" }}/>
       </div>
 
       {/* 닉네임과 이메일이 존재하는 컴퍼넌트 */}
