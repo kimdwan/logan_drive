@@ -27,6 +27,7 @@ type AuthService interface {
 	AuthParsePayloadService(ctx *gin.Context) (*dtos.Payload, error)
 	AuthGetUserEmailAndNickNameService(payload *dtos.Payload) *dtos.AuthNicknameAndEmailDto
 	AuthGetUserProfileImgService(payload *dtos.Payload, user_profile_datas *dtos.ImgDataDto) (int, error)
+	AuthUserLogoutService(ctx *gin.Context, payload *dtos.Payload) error
 }
 
 // payload를 제공하는 함수
@@ -152,6 +153,71 @@ func AuthGetUserProfileImgFindDataAndGetImgFunc(c context.Context, payload *dtos
 	if err = user_profile_datas.CheckImgType(); err != nil {
 		return err
 	}
+
+	return nil
+}
+
+// 유저를 로그아웃 해주는 함수
+func AuthUserLogoutService(ctx *gin.Context, payload *dtos.Payload) error {
+
+	var (
+		db   *gorm.DB = settings.DB
+		user servicemodel.User
+		err  error
+	)
+	c, cancel := context.WithTimeout(context.Background(), time.Second*100)
+	defer cancel()
+
+	// 유저 정보 검색
+	if err = AuthUserLogoutFindDatabaseFunc(c, db, &user, payload); err != nil {
+		return err
+	}
+
+	// 유저 정보 초기화
+	if err = AuthUserLogoutRemoveTokenFunc(c, ctx, db, &user); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+type AuthUserLogout interface {
+	AuthUserLogoutFindDatabaseFunc(c context.Context, db *gorm.DB, user *servicemodel.User, payload *dtos.Payload) error
+	AuthUserLogoutRemoveTokenFunc(c context.Context, ctx *gin.Context, db *gorm.DB, user *servicemodel.User) error
+}
+
+// 유저 정보를 검색한 후 초기화 해주는 함수
+func AuthUserLogoutFindDatabaseFunc(c context.Context, db *gorm.DB, user *servicemodel.User, payload *dtos.Payload) error {
+
+	// 유저 정보 검색
+	result := db.WithContext(c).Where("user_id = ?", payload.User_id.String()).First(user)
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			return errors.New("데이터 베이스에 해당 user id에 해당하는 데이터가 존재하지 않습니다")
+		} else {
+			log.Println("시스템 오류: ", result.Error.Error())
+			return errors.New("데이터 베이스에서 유저의 정보를 찾는데 오류가 발생했습니다")
+		}
+	}
+
+	return nil
+}
+
+// 보안 정보 초기화
+func AuthUserLogoutRemoveTokenFunc(c context.Context, ctx *gin.Context, db *gorm.DB, user *servicemodel.User) error {
+
+	// 유저 정보에서 삭제
+	user.Access_token = nil
+	user.Refresh_token = nil
+	user.Computer_number = nil
+	if result := db.WithContext(c).Save(user); result.Error != nil {
+		log.Println("시스템에 오류: ", result.Error.Error())
+		return errors.New("데이터 베이스를 업데이트 하는데 오류가 발생했습니다")
+	}
+
+	// 토큰 전달
+	ctx.SetSameSite(http.SameSiteLaxMode)
+	ctx.SetCookie("Authorization", "", 0, "", "", false, true)
 
 	return nil
 }

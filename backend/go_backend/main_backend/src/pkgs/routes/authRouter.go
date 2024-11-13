@@ -12,6 +12,10 @@ func AuthRouter(router *gin.Engine) {
 	authrouter := router.Group("auth")
 	authrouter.Use(middlewares.CheckJwtMiddleware())
 
+	// 유저가 정보를 이용하는 라우터
+	authuserrouter := authrouter.Group("user")
+	authuserrouter.GET("logout", controllers.AuthUserLogoutController)
+
 	// 기본정보를 가져오는 라우터
 	authgetrouter := authrouter.Group("get")
 	authgetrouter.GET("detail", controllers.AuthGetUserEmailAndNickNameController)
