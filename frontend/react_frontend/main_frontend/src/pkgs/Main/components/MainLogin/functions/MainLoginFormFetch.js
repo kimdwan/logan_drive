@@ -39,8 +39,10 @@ export const MainLoginFormFetch = async ( url, datas, setError, setComputerNumbe
 
     const data = await response.json()
     if (data && data["computer_number"]) {
-      setComputerNumber(data["computer_number"])
-      return data["messasge"]
+      const computer_number = data["computer_number"]
+      setComputerNumber(computer_number)
+      localStorage.setItem("logan_computer_number",computer_number)
+      return data["message"]
     }
 
   } catch (err) {
