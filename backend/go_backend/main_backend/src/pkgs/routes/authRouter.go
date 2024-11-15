@@ -15,6 +15,7 @@ func AuthRouter(router *gin.Engine) {
 	// 유저가 정보를 이용하는 라우터
 	authuserrouter := authrouter.Group("user")
 	authuserrouter.GET("logout", controllers.AuthUserLogoutController)
+	authuserrouter.POST("upload/profile", controllers.AuthUserUploadProfileController)
 
 	// 기본정보를 가져오는 라우터
 	authgetrouter := authrouter.Group("get")
