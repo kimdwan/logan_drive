@@ -36,3 +36,7 @@
 
 - mainUserProfile 페이지 완성
 - mainUserFooter 페이지 완성
+
+9. 1115
+
+- contents 페이지에 기본 틀 작성
