@@ -7,6 +7,9 @@
 1. 1004 
 - user, deleteUser 모델 생성
 
+2. 1120
+- friend, deleteFriend 모델 생성
+
 # 배운점
 
 1. 유저의 모든 권한을 가져가는 명령어
@@ -22,3 +25,9 @@ UPDATE "테이블 이름"
 SET "column1" = '',
 "column2" = ''
 WHERE "columns" = ''
+
+4. 데이터 베이스에서 테이블을 생성할때 기본값을 FALSE로 하려면
+CREATE TABLE "table_name" (
+  id INT PRIMARY KEY, 
+  bool1 BOOLEAN  NOT NULL DEFAULT FALSE
+)
