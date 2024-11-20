@@ -13,6 +13,7 @@ type AuthController interface {
 	AuthGetUserProfileImgController(ctx *gin.Context)
 	AuthUserLogoutController(ctx *gin.Context)
 	AuthUserUploadProfileController(ctx *gin.Context)
+	AuthUserGetFriendListController(ctx *gin.Context)
 }
 
 // 유저의 이메일과 닉네임을 가져오는 로직
@@ -125,4 +126,33 @@ func AuthUserUploadProfileController(ctx *gin.Context) {
 		"message": "이미지가 업로드 되었습니다.",
 	})
 
+}
+
+// 유저의 친구 목록을 확인할 수 있는 함수
+func AuthUserGetFriendListController(ctx *gin.Context) {
+
+	var (
+		payload      *dtos.Payload
+		friend_lists []dtos.AuthUserFriendListDto
+		errorStatus  int
+		err          error
+	)
+
+	// payload를 가져오는 함수
+	if payload, err = services.AuthParsePayloadService(ctx); err != nil {
+		ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	// 친구 데이터를 가져오는 로직
+	if errorStatus, err = services.AuthUserGetFriendListService(payload, &friend_lists); err != nil {
+		ctx.AbortWithStatusJSON(errorStatus, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, friend_lists)
 }

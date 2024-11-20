@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -50,9 +51,11 @@ func (u *User) BeforeCreate(tx *gorm.DB) error {
 	var (
 		isNicknameAllowed bool = false
 	)
-	if len(u.Nickname) >= 3 && len(u.Nickname) <= 12 {
+	nicknameLength := utf8.RuneCountInString(u.Nickname)
+	if nicknameLength >= 3 && nicknameLength <= 12 {
 		isNicknameAllowed = true
 	}
+
 	if !isNicknameAllowed {
 		return errors.New("시스템 오류: 닉네임은 최소 3글자 최대 12글자 입니다")
 	}
@@ -92,7 +95,8 @@ func (u *User) BeforeSave(tx *gorm.DB) error {
 	var (
 		isNickNameAllowed bool = false
 	)
-	if len(u.Nickname) >= 3 && len(u.Nickname) <= 12 {
+	nicknameLength := utf8.RuneCountInString(u.Nickname)
+	if nicknameLength >= 3 && nicknameLength <= 12 {
 		isNickNameAllowed = true
 	}
 	if !isNickNameAllowed {

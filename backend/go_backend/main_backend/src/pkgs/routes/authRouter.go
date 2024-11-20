@@ -16,6 +16,7 @@ func AuthRouter(router *gin.Engine) {
 	authuserrouter := authrouter.Group("user")
 	authuserrouter.GET("logout", controllers.AuthUserLogoutController)
 	authuserrouter.POST("upload/profile", controllers.AuthUserUploadProfileController)
+	authuserrouter.GET("get/friendlist", controllers.AuthUserGetFriendListController)
 
 	// 기본정보를 가져오는 라우터
 	authgetrouter := authrouter.Group("get")

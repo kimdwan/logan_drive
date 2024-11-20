@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -32,6 +33,7 @@ type AuthService interface {
 	AuthGetUserProfileImgService(payload *dtos.Payload, user_profile_datas *dtos.ImgDataDto) (int, error)
 	AuthUserLogoutService(ctx *gin.Context, payload *dtos.Payload) error
 	AuthUserUploadProfileService(ctx *gin.Context, payload *dtos.Payload) error
+	AuthUserGetFriendListService(payload *dtos.Payload, friend_lists *[]dtos.AuthUserFriendListDto) (int, error)
 }
 
 // payload를 제공하는 함수
@@ -442,4 +444,145 @@ func AuthUserUploadProfileCreateNewImgFunc(c context.Context, ctx *gin.Context, 
 	}
 
 	return 0, nil
+}
+
+// 유저의 친구리스트를 확인하는 함수
+func AuthUserGetFriendListService(payload *dtos.Payload, friend_lists *[]dtos.AuthUserFriendListDto) (int, error) {
+
+	var (
+		db  *gorm.DB = settings.DB
+		err error
+	)
+	c, cancel := context.WithTimeout(context.Background(), time.Second*100)
+	defer cancel()
+
+	// 유저 정보를 찾는 함수
+	if err = AuthUserGetFriendListFindFriendListsFunc(c, db, payload, friend_lists); err != nil {
+		return http.StatusInternalServerError, err
+	}
+
+	// 친구창이 비어있으면 자동으로 나가게 설계
+	if len(*friend_lists) == 0 {
+		return 0, nil
+	}
+
+	// 데이터 가져오기 함수
+	if err = AuthUserGetFriendListCheckUserAndGetDataFunc(c, db, friend_lists); err != nil {
+		return http.StatusInternalServerError, err
+	}
+
+	return 0, nil
+}
+
+type AuthUserGetFriendList interface {
+	AuthUserGetFriendListFindFriendListsFunc(c context.Context, db *gorm.DB, payload *dtos.Payload, friend_lists *[]dtos.AuthUserFriendListDto) error
+	AuthUserGetFriendListFindFriendListsAddUserAsyncFunc(wg *sync.WaitGroup, mutex *sync.Mutex, payload *dtos.Payload, freind_lists *[]servicemodel.Friend, friend_list *[]dtos.AuthUserFriendListDto, errs *[]error)
+	AuthUserGetFriendListCheckUserAndGetDataFunc(c context.Context, db *gorm.DB, friend_lists *[]dtos.AuthUserFriendListDto) error
+	AuthUserGetFriendListCheckUserAndGetDataSyncFunc(c context.Context, db *gorm.DB, wg *sync.WaitGroup, s3client *s3.Client, friend_lists *[]dtos.AuthUserFriendListDto, errs *[]error)
+}
+
+// 유저의 친구 정보가 있는지 확인하는 함수
+func AuthUserGetFriendListFindFriendListsFunc(c context.Context, db *gorm.DB, payload *dtos.Payload, friend_lists *[]dtos.AuthUserFriendListDto) error {
+	var (
+		friend_list []servicemodel.Friend
+	)
+
+	// 친구리스트 확인해보기
+	result := db.WithContext(c).Where("friend_1 = ? OR friend_2 = ?", payload.User_id, payload.User_id).Find(&friend_list)
+
+	if result.Error != nil {
+		if !errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			log.Println("시스템 오류: ", result.Error.Error())
+			return errors.New("데이터 베이스에서 친구와 관련된 데이터를 찾는데 오류가 발생했습니다")
+		}
+	}
+
+	// 친구 리스트가 비어 있으면 자동으로 나오도록 함
+	if len(friend_list) == 0 {
+		return nil
+	}
+
+	// 친구 리스트에 따른 값을 찾는데 사용
+	var (
+		wg    sync.WaitGroup
+		mutex sync.Mutex
+		errs  []error
+	)
+	wg.Add(1)
+	go AuthUserGetFriendListFindFriendListsAddUserAsyncFunc(&wg, &mutex, payload, &friend_list, friend_lists, &errs)
+	wg.Wait()
+
+	if len(errs) > 0 {
+		for _, err := range errs {
+			log.Println("시스템 오류: ", err.Error())
+		}
+		return errors.New("친구 정보를 리스트로 담는데 오류가 발생했습니다")
+	}
+
+	return nil
+}
+
+// 친구 리스트에 값을 비동기로 찾게 해주는 함수
+func AuthUserGetFriendListFindFriendListsAddUserAsyncFunc(wg *sync.WaitGroup, mutex *sync.Mutex, payload *dtos.Payload, freind_lists *[]servicemodel.Friend, friend_list *[]dtos.AuthUserFriendListDto, errs *[]error) {
+	defer wg.Done()
+
+	for idx, friend_value := range *freind_lists {
+		var (
+			friend dtos.AuthUserFriendListDto
+		)
+		mutex.Lock()
+		if friend_value.Friend_1 != payload.User_id && friend_value.Friend_2 == payload.User_id {
+			friend.Friend_id = friend_value.Friend_1
+			friend.Friend_like = friend_value.Friend_2_like
+		} else {
+			if friend_value.Friend_2 != payload.User_id && friend_value.Friend_1 == payload.User_id {
+				friend.Friend_id = friend_value.Friend_2
+				friend.Friend_like = friend_value.Friend_1_like
+			} else {
+				*errs = append(*errs, fmt.Errorf("%v에 index에 추가가 불가능한 부분이 존재합니다", idx))
+			}
+		}
+		*friend_list = append(*friend_list, friend)
+		mutex.Unlock()
+	}
+
+}
+
+// 유저 정보에 맞는 데이터를 찾고 데이터 가져오기
+func AuthUserGetFriendListCheckUserAndGetDataFunc(c context.Context, db *gorm.DB, friend_lists *[]dtos.AuthUserFriendListDto) error {
+
+	var (
+		wg       sync.WaitGroup
+		s3client *s3.Client = settings.S3Client
+		errs     []error
+	)
+
+	wg.Add(1)
+	go AuthUserGetFriendListCheckUserAndGetDataSyncFunc(c, db, &wg, s3client, friend_lists, &errs)
+	wg.Wait()
+
+	if len(errs) > 0 {
+		for _, err := range errs {
+			log.Println(err)
+		}
+		return errors.New("데이터 베이스에서 친구 데이터를 만드는데 오류가 발생했습니다")
+	}
+
+	return nil
+}
+
+// 비동기로 친구 데이터 처리하기
+func AuthUserGetFriendListCheckUserAndGetDataSyncFunc(c context.Context, db *gorm.DB, wg *sync.WaitGroup, s3client *s3.Client, friend_lists *[]dtos.AuthUserFriendListDto, errs *[]error) {
+
+	defer wg.Done()
+
+	for idx := range *friend_lists {
+
+		err := (*friend_lists)[idx].FindUserDataAndWriteFunc(c, db, s3client)
+
+		if err != nil {
+			*errs = append(*errs, err)
+		}
+	}
+
 }
