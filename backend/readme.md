@@ -15,6 +15,9 @@
 - sync에서 error 값을 추가할때 매개변수에 *[]error를 이용할 수 있다
 - utf 문자의 글자수를 확인할떄 utf8.RuneCountInString()를 이용할 수 있다
 - 배열자체를 바꾸고 싶으면 go에서는 해당 리스트 자체를 건드려야 한다
+- go에 websocket에서 upgrader에 header는 서버에서 클라이언트에 보낼것을 이야기 한다.
+- go에 websocket에서 dataType은 어떤 타입인지 확인할때 사용한다
+- go에 websocket은 전역으로 연결하면 안되고 개별적으로 연결행 한다
 
 2. aws 
 
