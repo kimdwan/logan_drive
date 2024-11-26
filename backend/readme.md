@@ -18,6 +18,7 @@
 - go에 websocket에서 upgrader에 header는 서버에서 클라이언트에 보낼것을 이야기 한다.
 - go에 websocket에서 dataType은 어떤 타입인지 확인할때 사용한다
 - go에 websocket은 전역으로 연결하면 안되고 개별적으로 연결행 한다
+- go에 select 문은 :를 이용해서 나눈다
 
 2. aws 
 

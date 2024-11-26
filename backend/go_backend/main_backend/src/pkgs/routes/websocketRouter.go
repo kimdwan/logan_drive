@@ -8,6 +8,9 @@ import (
 func WebsocketRouter(router *gin.Engine) {
 	websocketrouter := router.Group("ws")
 
+	// 테스트용
+	websocketrouter.GET("test", controllers.WebsocketTestController)
+
 	// 유저가 사용하는 라우터
 	wsuserrouter := websocketrouter.Group("user")
 	wsuserrouter.GET("friends/connect", controllers.WebsocketAuthFriendStatusController)
