@@ -153,7 +153,7 @@ func WebsocketUserStatusService(user_computer_number *dtos.WebsocketUserComputer
 
 	// 첫 서치할때 만 작동해야 하는 함수들
 	if *limit_count < 1 {
-		log.Println("유저 찾기 작동")
+		log.Printf("%v 유저 친구 정보 찾기 가동", user_computer_number.Computer_number)
 		// 유저의 아이디와 친구목록을 가져오는 로직
 		if errorStatus, err = WebsocketUserStatusGetUserIdAndFriendListFunc(c, db, user_computer_number, &user_id, &friend_lists, limit_count); err != nil {
 			return errorStatus, err
@@ -287,10 +287,10 @@ func WebsocketUserStatusVerifyFriendConnectFunc(c context.Context, db *gorm.DB, 
 		if friend.Computer_number == nil {
 			(*friend_statuses)[idx].Status = 0
 		} else {
-			if !now.Add(5 * time.Minute).Before(friend.UpdatedAt) {
+			if !friend.UpdatedAt.Add(5 * time.Minute).Before(now) {
 				(*friend_statuses)[idx].Status = 1
 			} else {
-				if !now.Add(1 * time.Hour).Before(friend.UpdatedAt) {
+				if !friend.UpdatedAt.Add(1 * time.Hour).Before(now) {
 					(*friend_statuses)[idx].Status = 2
 				} else {
 					(*friend_statuses)[idx].Status = 3
