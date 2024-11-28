@@ -1,13 +1,9 @@
 package controllers
 
 import (
-	"encoding/json"
+	"context"
 	"log"
 	"net/http"
-	"net/url"
-	"os"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -18,68 +14,63 @@ import (
 
 type WebsocketController interface {
 	WebsocketTestController(ctx *gin.Context)
-	WebsocketAuthFriendStatusController(ctx *gin.Context)
+	WebsocketUserStatusController(ctx *gin.Context)
 }
 
-// 테스트용 로직
+// 테스트용 컨트롤러
 func WebsocketTestController(ctx *gin.Context) {
 
-	upgrader := websocket.Upgrader{
-		WriteBufferSize: 1024,
-		ReadBufferSize:  1024,
-		CheckOrigin: func(r *http.Request) bool {
-			// origin header 파싱
-			origin := r.Header.Get("Origin")
+	var (
+		conn *websocket.Conn
+		err  error
+	)
 
-			parse_url, err := url.Parse(origin)
-			if err != nil {
-				log.Println("시스템 오류: ", err.Error())
-				return false
-			}
-
-			url_name := parse_url.Hostname()
-
-			// 검증
-			var (
-				allowed_hosts []string = strings.Split(os.Getenv("GO_ALLOWED_HOST_NAME"), ",")
-			)
-			for _, allowed_host := range allowed_hosts {
-				if url_name == allowed_host {
-					return true
-				}
-			}
-
-			return false
-		},
-	}
-
-	conn, err := upgrader.Upgrade(ctx.Writer, ctx.Request, nil)
-	if err != nil {
-		log.Println("시스템 오류: ", err.Error())
-		ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
-			"error": "웹소켓을 연결하는데 오류가 발생했습니다",
+	// 연결
+	if conn, err = services.WebsocketTranslateService(ctx); err != nil {
+		ctx.AbortWithStatusJSON(http.StatusExpectationFailed, gin.H{
+			"error": err.Error(),
 		})
 		return
 	}
-
 	defer conn.Close()
+
+	// 초반
+	if err = conn.WriteMessage(websocket.TextMessage, []byte(`연결되었습니다`)); err != nil {
+		log.Println("시스템 오류: ", err.Error())
+		return
+	}
+
 	ticker := time.NewTicker(5 * time.Second)
-	var stopConnect = make(chan bool)
 	defer ticker.Stop()
+	c, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	go func() {
+		for {
+			if _, _, err = conn.ReadMessage(); err != nil {
+				log.Println("시스템 오류: ", err.Error())
+				cancel()
+				return
+			}
+		}
+	}()
 
 	for {
 		select {
 		case <-ticker.C:
-			conn.WriteMessage(websocket.TextMessage, []byte(`연결 되었습니다`))
-		case <-stopConnect:
+			if err = conn.WriteMessage(websocket.TextMessage, []byte(`연결되었습니다`)); err != nil {
+				log.Println("시스템 오류: ", err.Error())
+				return
+			}
+		case <-c.Done():
 			return
 		}
 	}
 
 }
 
-// 유저 친구들의 실시간을 확인할 수 있는 로직
-func WebsocketAuthFriendStatusController(ctx *gin.Context) {
+// 친구가 실시간으로 접속해 있는지 확인하는 함수
+func WebsocketUserStatusController(ctx *gin.Context) {
 
 	var (
 		conn        *websocket.Conn
@@ -87,39 +78,67 @@ func WebsocketAuthFriendStatusController(ctx *gin.Context) {
 		err         error
 	)
 
-	// 웹소켓 연결
-	if conn, err = services.WebsocketConnectFunc(ctx); err != nil {
-		ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
+	// conn 연결
+	if conn, err = services.WebsocketTranslateService(ctx); err != nil {
+		ctx.AbortWithStatusJSON(http.StatusExpectationFailed, gin.H{
 			"error": err.Error(),
 		})
 		return
 	}
-
 	defer conn.Close()
 
-	log.Println("웹소켓이 연결되었습니다")
+	// 웹소켓 연결 실시간 확인
+	var (
+		user_computer_number *dtos.WebsocketUserComputerNumberDto
+		friend_statuses      []dtos.WebsocketFriendStatusDto
+		limit_count          int = 0
+	)
+	c, cancel := context.WithCancel(ctx)
+	defer cancel()
 
-	for {
-
-		var friend_status []dtos.WebsocketFriendDto
-
-		// 유저의 정보를 가져오는 로직
-		if errorStatus, err = services.WebsocketAuthFriendStatusService(conn, &friend_status); err != nil {
-			errorMsg, _ := json.Marshal(map[string]string{
-				"error":  err.Error(),
-				"status": strconv.Itoa(errorStatus),
-			})
-			conn.WriteMessage(websocket.TextMessage, errorMsg)
-			return
+	// 클라이언트에 데이터를 실시간으로 읽고 전달하고 검정한다
+	go func() {
+		for {
+			if user_computer_number, err = services.WebsocketParseDataService[dtos.WebsocketUserComputerNumberDto](conn, websocket.TextMessage); err != nil {
+				if err = services.WebsocketTransformDataAndSendDataToClientService[dtos.WebsocketErrorPackDto](conn, &dtos.WebsocketErrorPackDto{Error: err.Error(), Status: http.StatusBadRequest}, websocket.TextMessage); err != nil {
+					cancel()
+					return
+				}
+				cancel()
+				return
+			} else {
+				// 첫번째 서치
+				if errorStatus, err = services.WebsocketUserStatusService(user_computer_number, &friend_statuses, &limit_count); err != nil {
+					if err = services.WebsocketTransformDataAndSendDataToClientService[dtos.WebsocketErrorPackDto](conn, &dtos.WebsocketErrorPackDto{Error: err.Error(), Status: errorStatus}, websocket.TextMessage); err != nil {
+						return
+					}
+					return
+				} else {
+					if err = services.WebsocketTransformDataAndSendDataToClientService[[]dtos.WebsocketFriendStatusDto](conn, &friend_statuses, websocket.TextMessage); err != nil {
+						return
+					}
+				}
+			}
 		}
+	}()
 
-		// 데이터를 보내는 로직
-		if err = services.WebsocketSendDataService[[]dtos.WebsocketFriendDto](conn, &friend_status, websocket.TextMessage); err != nil {
-			errorMsg, _ := json.Marshal(map[string]string{
-				"error":  err.Error(),
-				"status": strconv.Itoa(http.StatusInternalServerError),
-			})
-			conn.WriteMessage(websocket.TextMessage, errorMsg)
+	// 시간 텀을 두고 메세지 전송
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			if errorStatus, err = services.WebsocketUserStatusService(user_computer_number, &friend_statuses, &limit_count); err != nil {
+				if err = services.WebsocketTransformDataAndSendDataToClientService[dtos.WebsocketErrorPackDto](conn, &dtos.WebsocketErrorPackDto{Error: err.Error(), Status: errorStatus}, websocket.TextMessage); err != nil {
+					return
+				}
+				return
+			} else {
+				if err = services.WebsocketTransformDataAndSendDataToClientService[[]dtos.WebsocketFriendStatusDto](conn, &friend_statuses, websocket.TextMessage); err != nil {
+					return
+				}
+			}
+		case <-c.Done():
 			return
 		}
 

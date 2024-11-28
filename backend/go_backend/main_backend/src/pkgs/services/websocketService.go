@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	servicemodel "github.com/kimdwan/logan_drive/models/serviceModel"
@@ -22,286 +23,283 @@ import (
 )
 
 type WebsocketService interface {
-	WebsocketConnectFunc(ctx *gin.Context) error
-	WebsocketReadDataService(conn *websocket.Conn, data *[]byte, dataType int) error
-	WebsocketAuthFriendStatusService(conn *websocket.Conn, friend_status *[]dtos.WebsocketFriendDto) (int, error)
+	WebsocketTranslateService(ctx *gin.Context) (*websocket.Conn, error)
+	WebsocketUserStatusService(user_computer_number *dtos.WebsocketUserComputerNumberDto, friend_statuses *[]dtos.WebsocketFriendStatusDto, limit_count int) (int, error)
 }
 
-// 웹소켓 연결을 진행해 주는 함수
-func WebsocketConnectFunc(ctx *gin.Context) (*websocket.Conn, error) {
+// websokcet으로 변환 시켜주는 함수
+func WebsocketTranslateService(ctx *gin.Context) (*websocket.Conn, error) {
 
-	upgrader := websocket.Upgrader{
-		ReadBufferSize:  1024,
-		WriteBufferSize: 1024,
-		CheckOrigin: func(r *http.Request) bool {
+	var (
+		websocketUpgrader = websocket.Upgrader{
+			ReadBufferSize:  1024,
+			WriteBufferSize: 1024,
+			CheckOrigin:     WebsocketTranslateCheckOriginFunc,
+		}
+	)
 
-			// 클라이언트에 url을 가져와서 확인하기
-			origin := r.Header.Get("Origin")
-
-			parse_url, err := url.Parse(origin)
-			if err != nil {
-				log.Println("시스템 오류: ", err.Error())
-				return false
-			}
-
-			url_name := parse_url.Hostname()
-			log.Println(url_name)
-
-			// header 검증하기
-			var (
-				allowed_hosts []string = strings.Split(os.Getenv("GO_ALLOWED_HOST_NAME"), ",")
-			)
-			for _, allowed_host := range allowed_hosts {
-				if url_name == allowed_host {
-					return true
-				}
-			}
-
-			return false
-		},
-	}
-
-	conn, err := upgrader.Upgrade(ctx.Writer, ctx.Request, nil)
+	// 본격적인 변환
+	conn, err := websocketUpgrader.Upgrade(ctx.Writer, ctx.Request, nil)
 	if err != nil {
 		log.Println("시스템 오류: ", err.Error())
-		return nil, errors.New("websocket연결을 하는데 오류가 발생했습니다")
+		return nil, errors.New("웹소켓을 변환하는데 오류가 발생했습니다")
 	}
 
 	return conn, nil
 }
 
-// 기본적으로 데이터를 읽는 함수
-func WebsocketReadDataService(conn *websocket.Conn, data *[]byte, dataType int) error {
-	var (
-		wsDataType int
-		err        error
-	)
+type WebsocketTranslate interface {
+	WebsocketTranslateCheckOriginFunc(r *http.Request) bool
+}
 
-	// conn에서 보낸 데이터 확인
-	wsDataType, *data, err = conn.ReadMessage()
+// origin을 확인하는 함수
+func WebsocketTranslateCheckOriginFunc(r *http.Request) bool {
+
+	// origin header 추출
+	origin := r.Header.Get("Origin")
+
+	// origin 파싱
+	parse_url, err := url.Parse(origin)
 	if err != nil {
 		log.Println("시스템 오류: ", err.Error())
-		return errors.New("웹소켓에서 보낸 데이터를 읽는데 오류가 발생했습니다")
+		return false
 	}
 
-	// 데이터가 문자열이 맞는지 확인
-	if wsDataType != dataType {
-		log.Println("시스템 오류: 웹소켓 데이터 타입 오류")
-		return errors.New("웹소켓에서 보낸 데이터 타입이 텍스트 타입이 아닙니다")
-	}
+	origin_host := parse_url.Hostname()
 
-	return nil
-
-}
-
-// 데이터 보내기
-func WebsocketSendDataService[T []dtos.WebsocketFriendDto](conn *websocket.Conn, send_data *T, dataType int) error {
-
+	// 검증
 	var (
-		datas []byte
-		err   error
+		allowed_hosts []string = strings.Split(os.Getenv("GO_ALLOWED_HOST_NAME"), ",")
 	)
-
-	// 데이터 직렬화
-	if datas, err = json.Marshal(send_data); err != nil {
-		log.Println("시스템 오류: ", err.Error())
-		return errors.New("데이터를 파싱하는데 오류가 발생했습니다")
+	for _, allowed_host := range allowed_hosts {
+		if origin_host == allowed_host {
+			return true
+		}
 	}
 
-	// 데이터를 보내기
-	if err = conn.WriteMessage(dataType, datas); err != nil {
-		log.Println("시스템 오류: ", err.Error())
-		return errors.New("데이터를 클라이언트에 보내는데 오류가 발생했습니다")
-	}
-
-	return nil
+	log.Println("시스템 오류: 허용되지 않는 host이름 입니다")
+	return false
 }
 
-// 유저의 친구창을 확인 후 상태창을 보여주는 함수
-func WebsocketAuthFriendStatusService(conn *websocket.Conn, friend_status *[]dtos.WebsocketFriendDto) (int, error) {
+// 데이터를 읽는 함수
+func WebsocketParseDataService[T dtos.WebsocketUserComputerNumberDto](conn *websocket.Conn, wantDataType int) (*T, error) {
 
 	var (
-		wsData      []byte
-		dataType    = websocket.TextMessage
-		errorStatus int
+		client_data T
+		dataType    int
+		data        []byte
 		err         error
 	)
 
-	// 웹소켓 에서 데이터 가져오기
-	if err = WebsocketReadDataService(conn, &wsData, dataType); err != nil {
-		return http.StatusBadRequest, err
+	// 데이터 읽기
+	if dataType, data, err = conn.ReadMessage(); err != nil {
+		log.Println("시스템 오류: ", err.Error())
+		return nil, errors.New("데이터를 읽는데 오류가 발생했습니다")
 	}
+
+	// 데이터 검정
+	if dataType != wantDataType {
+		log.Printf("시스템 오류: 데이터 타입이 %v이 아님", wantDataType)
+		return nil, errors.New("데이터 타입을 다시 확인해주세요")
+	}
+
+	// 데이터 변환
+	if err = json.Unmarshal(data, &client_data); err != nil {
+		log.Println("시스템 오류: ", err.Error())
+		return nil, errors.New("클라이언트에 데이터를 변환하는데 오류가 발생했습니다")
+	}
+
+	// 데이터 검정2
+	validate := validator.New()
+	if err = validate.Struct(client_data); err != nil {
+		log.Println("시스템 오류: ", err.Error())
+		return nil, errors.New("클라이언트 데이터를 검정하는데 오류가 발생했습니다")
+	}
+
+	return &client_data, nil
+}
+
+// 웹소켓에서 실시간으로 데이터를 보내주는 함수
+func WebsocketTransformDataAndSendDataToClientService[T dtos.WebsocketErrorPackDto | []dtos.WebsocketFriendStatusDto](conn *websocket.Conn, data *T, dataType int) error {
+
+	// 데이터 변환
+	data_byte, err := json.Marshal(data)
+	if err != nil {
+		log.Println("시스템 오류: ", err.Error())
+		return errors.New("데이터를 변환하는데 오류가 발생했습니다")
+	}
+
+	// 데이터 전송
+	if err = conn.WriteMessage(dataType, data_byte); err != nil {
+		log.Println("시스템 오류: ", err.Error())
+		return errors.New("데이터를 전송하는데 오류가 발생했습니다")
+	}
+
+	return nil
+}
+
+// 유저의 친구들이 실시간으로 접속해 있는지 확인하는 함수
+func WebsocketUserStatusService(user_computer_number *dtos.WebsocketUserComputerNumberDto, friend_statuses *[]dtos.WebsocketFriendStatusDto, limit_count *int) (int, error) {
 
 	var (
 		db           *gorm.DB = settings.DB
-		friend_lists []uuid.UUID
+		user_id      uuid.UUID
+		friend_lists []servicemodel.Friend
+		errorStatus  int
+		err          error
 	)
 	c, cancel := context.WithTimeout(context.Background(), time.Second*100)
 	defer cancel()
 
-	// 웹소켓에 데이터를 파싱하고 친구창 데이터 가져오기
-	if errorStatus, err = WebsocketAuthFreindStatusParseDataAndFindFriendFunc(c, db, &wsData, &friend_lists); err != nil {
-		return errorStatus, err
+	// 첫 서치할때 만 작동해야 하는 함수들
+	if *limit_count < 1 {
+		log.Println("유저 찾기 작동")
+		// 유저의 아이디와 친구목록을 가져오는 로직
+		if errorStatus, err = WebsocketUserStatusGetUserIdAndFriendListFunc(c, db, user_computer_number, &user_id, &friend_lists, limit_count); err != nil {
+			return errorStatus, err
+		}
+
+		// 친구가 없다면 빠져나옴
+		if len(friend_lists) == 0 {
+			return 0, nil
+		}
+
+		// 친구 목록을 정리 하는 로직
+		var (
+			wg    sync.WaitGroup
+			mutex sync.Mutex
+		)
+		wg.Add(1)
+		go WebsocketUserStatusParseFriendDataFunc(&wg, &mutex, &user_id, &friend_lists, friend_statuses)
+		wg.Wait()
 	}
 
-	// 친구가 없다면 스킵
-	if len(friend_lists) == 0 {
+	// status가 0개라면 빠져나옴
+	if len(*friend_statuses) == 0 {
 		return 0, nil
 	}
 
-	// 본격적으로 친구에 접속여부를 확인하는 로직
-	if err = WebsocketAuthFriendStatusGetDataFunc(c, db, &friend_lists, friend_status); err != nil {
-		return http.StatusInternalServerError, err
+	// 접속중인지 확인하는 함수들
+	var (
+		wg        sync.WaitGroup
+		mutex     sync.Mutex
+		errorList []error
+	)
+	wg.Add(1)
+	go WebsocketUserStatusVerifyFriendConnectFunc(c, db, &wg, &mutex, friend_statuses, &errorList)
+	wg.Wait()
+
+	if len(errorList) != 0 {
+		for _, errorResult := range errorList {
+			log.Println("시스템 오류: ", errorResult.Error())
+		}
+		return http.StatusInternalServerError, errors.New("유저의 상태를 업로드 하는데 오류가 발생했습니다")
 	}
 
 	return 0, nil
 }
 
-type WebsocketAuthFriendStatus interface {
-	WebsocketAuthFreindStatusParseDataAndFindFriendFunc(c context.Context, db *gorm.DB, wsData *[]byte, friend_lists *[]uuid.UUID) (int, error)
-	WebsocketAuthFreindStatusParseFriendDataFunc(wg *sync.WaitGroup, mutex *sync.Mutex, user_id *uuid.UUID, friend_data_lists *[]servicemodel.Friend, friend_lists *[]uuid.UUID)
-	WebsocketAuthFriendStatusGetDataFunc(c context.Context, db *gorm.DB, friend_lists *[]uuid.UUID, friend_status *[]dtos.WebsocketFriendDto) error
-	WebsocketAuthFriendStatusGetDataSyncFunc(c context.Context, db *gorm.DB, wg *sync.WaitGroup, mutex *sync.Mutex, friend_lists *[]uuid.UUID, friend_status *[]dtos.WebsocketFriendDto, error_lists *[]error)
+type WebsocketUserStatus interface {
+	WebsocketUserStatusGetUserIdAndFriendListFunc(c context.Context, db *gorm.DB, user_computer_number *dtos.WebsocketUserComputerNumberDto, user_id *uuid.UUID, friend_lists []servicemodel.Friend, limit_count *int) (int, error)
+	WebsocketUserStatusParseFriendDataFunc(wg *sync.WaitGroup, mutex *sync.Mutex, user_id *uuid.UUID, friend_lists *[]servicemodel.Friend, friend_statuses *[]dtos.WebsocketFriendStatusDto)
+	WebsocketUserStatusVerifyFriendConnectFunc(c context.Context, db *gorm.DB, wg *sync.WaitGroup, mutex *sync.Mutex, friend_statuses *[]dtos.WebsocketFriendStatusDto, errorList *[]error)
 }
 
-// 웹소켓에서 보낸 데이터를 파싱하고 친구창 데이터를 확인함
-func WebsocketAuthFreindStatusParseDataAndFindFriendFunc(c context.Context, db *gorm.DB, wsData *[]byte, friend_lists *[]uuid.UUID) (int, error) {
+// 유저의 아이디와 친구목록을 가져오는 로직
+func WebsocketUserStatusGetUserIdAndFriendListFunc(c context.Context, db *gorm.DB, user_computer_number *dtos.WebsocketUserComputerNumberDto, user_id *uuid.UUID, friend_lists *[]servicemodel.Friend, limit_count *int) (int, error) {
 
-	var computer_number dtos.WebsocketComputerNumberDto
-
-	// wsData를 파싱해주어야 함
-	err := json.Unmarshal(*wsData, &computer_number)
-	if err != nil {
-		log.Println("시스템 오류: ", err.Error())
-		return http.StatusBadRequest, errors.New("컴퓨터 넘버를 파싱하는데 오류가 발생했습니다")
-	}
-
-	// 유저 정보부터 찾기
-	var user servicemodel.User
-	result := db.WithContext(c).Where("computer_number = ?", computer_number.Computer_number).First(&user)
+	// 유저의 아이디를 가져오는 로직
+	var (
+		user servicemodel.User
+	)
+	result := db.WithContext(c).Where("computer_number = ?", user_computer_number.Computer_number).First(&user)
 	if result.Error != nil {
 		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-			log.Println("시스템 오류: 데이터 베이스에서 클라이언트에서 보낸 computer number와 일치하는 유저 데이터를 찾지 못함")
-			return http.StatusBadRequest, errors.New("클라이언트에서 보낸 computer number를 다시 확인하세요")
+			log.Println("시스템 오류: computer number에 해당하는 유저 테이블 찾지 못함")
+			return http.StatusBadRequest, errors.New("클라이언트에서 보낸 유저의 컴퓨터 넘버를 다시 확인해주세요")
 		} else {
 			log.Println("시스템 오류: ", result.Error.Error())
-			return http.StatusInternalServerError, errors.New("데이터 베이스에서 유저 정보를 찾는데 오류가 발생했습니다")
+			return http.StatusInternalServerError, errors.New("데이터 베이스에서 유저 테이블을 찾는데 오류가 발생했습니다")
 		}
 	}
 
-	// 데이터 베이스에서 친구 정보를 찾기
-	var friend_data_lists []servicemodel.Friend
-	if result = db.WithContext(c).Where("friend_1 = ? OR friend_2 = ?", user.User_id, user.User_id).Find(&friend_data_lists); result.Error != nil {
-		log.Println("시스템 오류: ", result.Error.Error())
-		return http.StatusInternalServerError, errors.New("데이터 베이스에서 친구에 정보를 찾는데 오류가 발생했습니다")
+	// 유저의 아이디를 배정
+	*user_id = user.User_id
+
+	// 친구 리스트를 가져옴
+	if result = db.WithContext(c).Where("friend_1 = ? OR friend_2 = ?", *user_id, *user_id).Find(friend_lists); result.Error != nil {
+		if !errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			log.Println("시스템 오류: ", result.Error.Error())
+			return http.StatusInternalServerError, errors.New("데이터 베이스에서 유저 친구의 정보를 찾는데 오류가 발생했습니다")
+		}
 	}
 
-	// 친구가 없으면 skip
-	if len(friend_data_lists) == 0 {
-		return 0, nil
-	}
-
-	// 친구 데이터 정리
-	var (
-		wg    sync.WaitGroup
-		mutex sync.Mutex
-	)
-	wg.Add(1)
-	go WebsocketAuthFreindStatusParseFriendDataFunc(&wg, &mutex, &user.User_id, &friend_data_lists, friend_lists)
-	wg.Wait()
+	// 친구 목록 찾기는 이정도로만 하기
+	*limit_count += 1
 
 	return 0, nil
-
 }
 
-// 데이터 베이스에서 보낸 친구 데이터를 파싱하는데 사용
-func WebsocketAuthFreindStatusParseFriendDataFunc(wg *sync.WaitGroup, mutex *sync.Mutex, user_id *uuid.UUID, friend_data_lists *[]servicemodel.Friend, friend_lists *[]uuid.UUID) {
-
-	defer wg.Done()
-	for _, friend_data := range *friend_data_lists {
-
-		mutex.Lock()
-		if *user_id == friend_data.Friend_1 {
-			*friend_lists = append(*friend_lists, friend_data.Friend_2)
-		} else {
-			*friend_lists = append(*friend_lists, friend_data.Friend_1)
-		}
-		mutex.Unlock()
-
-	}
-
-}
-
-// 친구의 상태창을 확인하는데 사용
-func WebsocketAuthFriendStatusGetDataFunc(c context.Context, db *gorm.DB, friend_lists *[]uuid.UUID, friend_status *[]dtos.WebsocketFriendDto) error {
-
-	var (
-		wg          sync.WaitGroup
-		mutex       sync.Mutex
-		error_lists []error
-	)
-
-	// 친구 데이터 데이터 베이스에서 찾고 가져오기
-	wg.Add(1)
-	go WebsocketAuthFriendStatusGetDataSyncFunc(c, db, &wg, &mutex, friend_lists, friend_status, &error_lists)
-	wg.Wait()
-
-	if len(error_lists) != 0 {
-		for _, error_value := range error_lists {
-			log.Println("시스템 오류: ", error_value.Error())
-		}
-		return errors.New("데이터 베이스에서 유저의 정보를 가져오는데 오류가 발생했습니다")
-	}
-
-	return nil
-}
-
-// 친구 상태창 확인 후 정리
-func WebsocketAuthFriendStatusGetDataSyncFunc(c context.Context, db *gorm.DB, wg *sync.WaitGroup, mutex *sync.Mutex, friend_lists *[]uuid.UUID, friend_status *[]dtos.WebsocketFriendDto, error_lists *[]error) {
+// 친구 아이디만 가져오는 로직
+func WebsocketUserStatusParseFriendDataFunc(wg *sync.WaitGroup, mutex *sync.Mutex, user_id *uuid.UUID, friend_lists *[]servicemodel.Friend, friend_statuses *[]dtos.WebsocketFriendStatusDto) {
 
 	defer wg.Done()
 	for _, friend := range *friend_lists {
 
 		mutex.Lock()
-		// 데이터 베이스에서 유저 정보 가져오기
-		var user servicemodel.User
-		result := db.WithContext(c).Where("user_id = ?", friend).First(&user)
+		var friend_status dtos.WebsocketFriendStatusDto
+		if *user_id == friend.Friend_1 {
+			friend_status.Friend_id = friend.Friend_2
+		} else if *user_id == friend.Friend_2 {
+			friend_status.Friend_id = friend.Friend_1
+		}
+
+		*friend_statuses = append(*friend_statuses, friend_status)
+		mutex.Unlock()
+	}
+}
+
+// 친구가 접속중인지 확인하는 로직
+func WebsocketUserStatusVerifyFriendConnectFunc(c context.Context, db *gorm.DB, wg *sync.WaitGroup, mutex *sync.Mutex, friend_statuses *[]dtos.WebsocketFriendStatusDto, errorList *[]error) {
+
+	defer wg.Done()
+	for idx, friend_status := range *friend_statuses {
+
+		mutex.Lock()
+
+		var (
+			friend servicemodel.User
+		)
+
+		// 정보 찾기
+		result := db.WithContext(c).Where("user_id = ?", friend_status.Friend_id).First(&friend)
 		if result.Error != nil {
-			if !errors.Is(result.Error, gorm.ErrRecordNotFound) {
-				*error_lists = append(*error_lists, result.Error)
+			if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+				(*friend_statuses)[idx].Status = 4
+				continue
 			} else {
-				log.Println("존재하지 않는 유저 입니다")
+				*errorList = append(*errorList, result.Error)
 			}
 		}
 
-		// 상태에 따른 값 배정 로그아웃 = 0, 활성화 = 1, 부재중(5분 정도) = 2, 연결안됨(1시간 동안 활동 안할때) = 3
-		var status dtos.WebsocketFriendDto
-		if user.Computer_number != nil {
-
-			var (
-				now = time.Now()
-			)
-			if now.Before(user.UpdatedAt.Add(time.Duration(5) * time.Minute)) {
-				status.Friend_id = user.User_id
-				status.Friend_status = 1
+		// 데이터 확인
+		var now = time.Now()
+		if friend.Computer_number == nil {
+			(*friend_statuses)[idx].Status = 0
+		} else {
+			if !now.Add(5 * time.Minute).Before(friend.UpdatedAt) {
+				(*friend_statuses)[idx].Status = 1
 			} else {
-				if now.Before(user.UpdatedAt.Add(time.Duration(1) * time.Hour)) {
-					status.Friend_id = user.User_id
-					status.Friend_status = 2
+				if !now.Add(1 * time.Hour).Before(friend.UpdatedAt) {
+					(*friend_statuses)[idx].Status = 2
 				} else {
-					status.Friend_id = user.User_id
-					status.Friend_status = 3
+					(*friend_statuses)[idx].Status = 3
 				}
 			}
-
-		} else {
-			status.Friend_id = user.User_id
-			status.Friend_status = 0
 		}
 
-		*friend_status = append(*friend_status, status)
-
 		mutex.Unlock()
+
 	}
 
 }

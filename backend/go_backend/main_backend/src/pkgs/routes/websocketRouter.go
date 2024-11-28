@@ -6,13 +6,13 @@ import (
 )
 
 func WebsocketRouter(router *gin.Engine) {
-	websocketrouter := router.Group("ws")
+
+	wsrouter := router.Group("ws")
 
 	// 테스트용
-	websocketrouter.GET("test", controllers.WebsocketTestController)
+	wsrouter.GET("test", controllers.WebsocketTestController)
 
-	// 유저가 사용하는 라우터
-	wsuserrouter := websocketrouter.Group("user")
-	wsuserrouter.GET("friends/connect", controllers.WebsocketAuthFriendStatusController)
-
+	// 유저가 사용하는 웹소켓
+	wsuserrouter := wsrouter.Group("user")
+	wsuserrouter.GET("status", controllers.WebsocketUserStatusController)
 }
