@@ -19,6 +19,8 @@
 - go에 websocket에서 dataType은 어떤 타입인지 확인할때 사용한다
 - go에 websocket은 전역으로 연결하면 안되고 개별적으로 연결행 한다
 - go에 select 문은 :를 이용해서 나눈다
+- go에서 ticker 함수는 시간의 chan로 이용할 수 있고 이를 통해 시간을 비동기적으로 처리할 수 있다
+- go에서 context는 부모 structure을 받아와서 이에 대해서 제어할 수 있게 해주는 패키지 이다.
 
 2. aws 
 
