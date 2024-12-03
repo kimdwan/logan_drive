@@ -13,7 +13,7 @@ export const ContentNavbarUser = ({ computerNumber, setComputerNumber }) => {
       <ContentNavbarUserProfile computerNumber = {computerNumber} setComputerNumber = {setComputerNumber} />
 
       {/* 유저가 이미지를 업로드 할 수 있음 */}
-      <ContentNavbarUserUploadImg />
+      <ContentNavbarUserUploadImg computerNumber = {computerNumber} setComputerNumber = {setComputerNumber} />
 
       {/* 유저가 서비스 메뉴를 선택할 수 있음 */}
       <ContentNavbarUserService />
