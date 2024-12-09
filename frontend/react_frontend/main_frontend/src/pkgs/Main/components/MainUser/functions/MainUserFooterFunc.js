@@ -54,7 +54,7 @@ export class MainUserFooterClass {
   // 메인 컨텐츠를 이용 할 수 있게 해주는 함수
   GoMainContents() {
     if (this.computerNumber) {
-      this.navigate("/main/")
+      this.navigate("/main/channellist")
     }
   }
 

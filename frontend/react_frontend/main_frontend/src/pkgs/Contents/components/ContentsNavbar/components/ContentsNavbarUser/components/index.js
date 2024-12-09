@@ -1,5 +1,5 @@
 export * from "./ContentsNavbarUserLogo"
 export * from "./ContentsNavbarUserProfile"
 export * from "./ContentsNavbarUserUploadImg"
-export * from "./ContentsNavbarUserService"
+export * from "./ContentsNavbarUserService/ContentsNavbarUserService"
 export * from "./ContentsNavbarUserFooter"

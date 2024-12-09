@@ -44,4 +44,8 @@
 10. 1203
 
 - contentsNavbar에 기본 틀 작성
-- contentsNavbarUser에 기본 틀 작성
+- contentsNavbarUser에 기본 틀 작성 
+
+11. 1209 
+
+- contentNavbarUser에 Service에 channelList 틀 작성
