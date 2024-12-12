@@ -3,7 +3,7 @@ import { useContentNavbarUserServiceReedemLocationHook } from "./hooks"
 
 export const ContentNavbarUserService = () => {
   const { urlTitle } = useContentNavbarUserServiceReedemLocationHook()
-
+  
   return (
     <div className = "contentNavbarUserServiceContainer">
       {
