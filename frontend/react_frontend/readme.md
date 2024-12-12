@@ -49,3 +49,7 @@
 11. 1209 
 
 - contentNavbarUser에 Service에 channelList 틀 작성
+
+12. 1212
+
+- contentNavbarUser에 service에서 logout 작성

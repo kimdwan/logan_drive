@@ -19,7 +19,7 @@ export const ContentNavbarUser = ({ computerNumber, setComputerNumber }) => {
       <ContentNavbarUserService />
 
       {/* 아래쪽을 담당하고 있음 */}
-      <ContentNavbarUserFooter />
+      <ContentNavbarUserFooter computerNumber = {computerNumber} setComputerNumber = {setComputerNumber} />
 
     </div>
   )
