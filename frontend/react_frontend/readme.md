@@ -56,3 +56,7 @@
 - contentNavbarTop에 left 부분 작성
 - contentNavbarTop에 Mid 부분 작성
 - contentNavbarTop에 Right 부분 틀 작성
+
+13. 1231 
+
+- contentNavbarFriend에서 친구 리스트와 접속을 확인하는 로직 작성

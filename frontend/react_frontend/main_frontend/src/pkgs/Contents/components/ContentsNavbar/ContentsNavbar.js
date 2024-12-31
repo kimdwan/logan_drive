@@ -18,7 +18,7 @@ export const ContentNavbar = () => {
       <ContentNavbarTop />
 
       {/* 친구 창이 보이는 컴퍼넌트 */}
-      <ContentNavbarFriend />
+      <ContentNavbarFriend computerNumber = {computerNumber} setComputerNumber = {setComputerNumber}/>
 
     </div>
   )
