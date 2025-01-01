@@ -15,7 +15,9 @@ func MigrateDatabase() {
 		// 친구 관계 모델
 		&servicemodel.Friend{}, &pilemodel.DeleteFriend{},
 		// 채팅관련 모델
-		&servicemodel.FriendChat{}, &pilemodel.DeleteFriendChat{}); err != nil {
+		&servicemodel.FriendChat{}, &pilemodel.DeleteFriendChat{},
+		// 친구 상태 관련 모델
+		&servicemodel.PrepareFriend{}); err != nil {
 		fmt.Println("시스템 오류: ", err.Error())
 		panic("데이터 베이스에 마이그레이션 하는데 오류가 발생했습니다")
 	}

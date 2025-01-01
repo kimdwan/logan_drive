@@ -13,6 +13,7 @@
 3. 0101 
 - friend 테이블에 유저의 메세지 읽음 갯수 추가
 - friendChat, deleteFriendChat 모델 생성
+- preparefriendstatus 모델 생성
 
 # 배운점
 
