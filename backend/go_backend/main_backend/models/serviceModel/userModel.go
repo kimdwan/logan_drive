@@ -22,7 +22,7 @@ type User struct {
 	Nickname         string    `gorm:"type:varchar(255);not null;unique;"`
 	Birthday         *string   `gorm:"type:date;"`
 	User_profile_img *string
-	Term_agree_3     bool       `gorm:"not null;"`
+	Term_agree_3     bool       `gorm:"type:boolean;default:false;not null;"`
 	User_title       string     `gorm:"type:varchar(255);not null;"`
 	Access_token     *string    `gorm:"unique;"`
 	Refresh_token    *string    `gorm:"unique;"`

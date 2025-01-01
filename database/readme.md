@@ -10,6 +10,10 @@
 2. 1120
 - friend, deleteFriend 모델 생성
 
+3. 0101 
+- friend 테이블에 유저의 메세지 읽음 갯수 추가
+- friendChat, deleteFriendChat 모델 생성
+
 # 배운점
 
 1. 유저의 모든 권한을 가져가는 명령어

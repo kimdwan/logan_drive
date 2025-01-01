@@ -52,7 +52,7 @@ export const ContentNavbarFriendList = ({ computerNumber, setComputerNumber }) =
                 {/* 친구의 접속상태 확인 */}
                 <div className = "contentNavbarFriendListScheduleProfileConnectCheckBox">
                     {
-                      statuses === 0 ? "⚪" : statuses === 1 ? "🟢" : statuses === 2 ? "🟡" : statuses === 3 ? "🔴" : statuses === 4 ? "❓" : "오류"
+                      statuses === 0 ? "⚪" : statuses === 1 ? "🟢" : statuses === 2 ? "🟡" : statuses === 3 ? "🔴" : statuses === 4 ? "❓" : "⚠️"
                     }
                 </div>
 

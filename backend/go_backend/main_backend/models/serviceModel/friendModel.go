@@ -10,12 +10,15 @@ import (
 
 type Friend struct {
 	gorm.Model
-	Friend_id uuid.UUID `gorm:"type:uuid;unique;not null;"`
-	// 실제 존재하는 친구창인지 확인해야 함
-	Friend_1      uuid.UUID `gorm:"type:uuid;uniqueIndex:idx_friends;not null;"`
-	Friend_2      uuid.UUID `gorm:"type:uuid;uniqueIndex:idx_friends;not null;"`
-	Friend_1_like bool      `gorm:"not null;default:false;"`
-	Friend_2_like bool      `gorm:"not null;default:false;"`
+	Friend_id                uuid.UUID `gorm:"type:uuid;unique;not null;"`
+	Friend_1                 uuid.UUID `gorm:"type:uuid;uniqueIndex:idx_friends;not null;"`
+	Friend_2                 uuid.UUID `gorm:"type:uuid;uniqueIndex:idx_friends;not null;"`
+	Friend_1_like            bool      `gorm:"not null;default:false;"`
+	Friend_2_like            bool      `gorm:"not null;default:false;"`
+	Not_Check_message_number int       `gorm:"type:int;not null;default:0;"`
+
+	// 관계 모음
+	Friend_chat []FriendChat `gorm:"foreignKey:friend_id;references:friend_id;constraint:OnUpdate:CASCADE,OnDelete:SET NULL;"`
 }
 
 // 테이블을 생성할때 확인하는 함수
