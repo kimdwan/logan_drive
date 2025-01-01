@@ -254,6 +254,9 @@ func WebsocketUserStatusParseFriendDataFunc(wg *sync.WaitGroup, mutex *sync.Mute
 			friend_status.Friend_id = friend.Friend_1
 		}
 
+		// 문자 메세지 몇개 봤는지도 확인
+		friend_status.No_check_message_number = friend.Not_Check_message_number
+
 		*friend_statuses = append(*friend_statuses, friend_status)
 		mutex.Unlock()
 	}
