@@ -12,6 +12,8 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/gin-gonic/gin"
+	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
 	servicemodel "github.com/kimdwan/logan_drive/models/serviceModel"
 	"gorm.io/gorm"
@@ -106,6 +108,35 @@ func (aufl *AuthUserFriendListDto) FindUserDataAndWriteFunc(c context.Context, d
 		)
 
 		aufl.Friend_imgtype = strings.ToLower(img_profile_data_lists[len(img_profile_data_lists)-1])
+	}
+
+	return nil
+}
+
+// 친구에게 메세지를 보낼때 사용하는 스트럭트
+type AuthFriendSendMessageDto struct {
+	Friend_id uuid.UUID `json:"friend_id" validate:"required,uuid"`
+	Message   string    `json:"message" validate:"required,min=1,max=500"`
+}
+
+// 맞는지 검증하는 로직
+type AuthFriendSendMessage interface {
+	AuthFriendSendMessageParseAndPayloadFunc(ctx *gin.Context) error
+}
+
+func (a *AuthFriendSendMessageDto) AuthFriendSendMessageParseAndPayloadFunc(ctx *gin.Context) (err error) {
+
+	// body에 데이터를 가져오기
+	if err = ctx.ShouldBindBodyWithJSON(a); err != nil {
+		log.Println("시스템 오류: ", err.Error())
+		return errors.New("(json) 클라이언트에 데이터를 가져오는데 오류가 발생했습니다")
+	}
+
+	// validate 검증
+	validate := validator.New()
+	if err = validate.Struct(a); err != nil {
+		log.Println("시스템 오류: ", err.Error())
+		return errors.New("(validate) 클라이언트에 폼을 검증하는데 오류가 발생했습니다")
 	}
 
 	return nil

@@ -22,4 +22,8 @@ func AuthRouter(router *gin.Engine) {
 	authgetrouter := authrouter.Group("get")
 	authgetrouter.GET("detail", controllers.AuthGetUserEmailAndNickNameController)
 	authgetrouter.GET("profileimg", controllers.AuthGetUserProfileImgController)
+
+	// 친구창 관리와 관련된 라우터
+	authfriendrouter := authrouter.Group("friend")
+	authfriendrouter.POST("send/message", controllers.AuthFriendSendMessageController)
 }

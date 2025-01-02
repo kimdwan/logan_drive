@@ -21,6 +21,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	servicemodel "github.com/kimdwan/logan_drive/models/serviceModel"
 	"github.com/kimdwan/logan_drive/settings"
 	"github.com/kimdwan/logan_drive/src/dtos"
@@ -34,6 +35,7 @@ type AuthService interface {
 	AuthUserLogoutService(ctx *gin.Context, payload *dtos.Payload) error
 	AuthUserUploadProfileService(ctx *gin.Context, payload *dtos.Payload) error
 	AuthUserGetFriendListService(payload *dtos.Payload, friend_lists *[]dtos.AuthUserFriendListDto) (int, error)
+	AuthFriendSendMessageService(payload *dtos.Payload, friend_message_dto *dtos.AuthFriendSendMessageDto) (int, error)
 }
 
 // payload를 제공하는 함수
@@ -585,4 +587,93 @@ func AuthUserGetFriendListCheckUserAndGetDataSyncFunc(c context.Context, db *gor
 		}
 	}
 
+}
+
+// 친구에게 메세지를 보내는 로직
+func AuthFriendSendMessageService(payload *dtos.Payload, friend_message_dto *dtos.AuthFriendSendMessageDto) (int, error) {
+
+	// 기본 설정
+	var (
+		db            *gorm.DB = settings.DB
+		friend_get_id uuid.UUID
+		errorStatus   int
+		err           error
+	)
+	c, cancel := context.WithTimeout(context.Background(), time.Second*100)
+	defer cancel()
+
+	// 친구가 맞는지 확인하고 가져오는 로직
+	if errorStatus, err = AuthFriendSendMessageCheckAllowFriendAndGetFriendIdFunc(c, db, payload, friend_message_dto, &friend_get_id); err != nil {
+		return errorStatus, err
+	}
+
+	// 문자데이터를 저장
+	if err = AuthFriendSendMessageUploadMessageFunc(c, db, payload, friend_message_dto, &friend_get_id); err != nil {
+		return http.StatusInternalServerError, err
+	}
+
+	return 0, nil
+}
+
+// 친구에게 메세지를 보내기 위한 함수들
+type AuthFriendSendMessage interface {
+	AuthFriendSendMessageCheckAllowFriendAndGetFriendIdFunc(c context.Context, db *gorm.DB, payload *dtos.Payload, friend_message_dto *dtos.AuthFriendSendMessageDto, friend_get_id *uuid.UUID) (int, error)
+	AuthFriendSendMessageUploadMessageFunc(c context.Context, db *gorm.DB, payload *dtos.Payload, friend_message_dto *dtos.AuthFriendSendMessageDto, friend_get_id *uuid.UUID) error
+}
+
+// 친구가 맞는지 확인하고 친구의 아이디를 가져오는 로직 생성
+func AuthFriendSendMessageCheckAllowFriendAndGetFriendIdFunc(c context.Context, db *gorm.DB, payload *dtos.Payload, friend_message_dto *dtos.AuthFriendSendMessageDto, friend_get_id *uuid.UUID) (int, error) {
+
+	// 친구가 있는지 확인
+	var (
+		friend servicemodel.Friend
+	)
+	result := db.WithContext(c).Where("friend_id = ?", friend_message_dto.Friend_id).First(&friend)
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			return http.StatusBadRequest, errors.New("보낸 friend 모델에 아이디를 다시 확인해주세요")
+		} else {
+			log.Println("시스템 오류: ", result.Error.Error())
+			return http.StatusInternalServerError, errors.New("데이터 베이스에서 친구 아이디를 찾는데 오류가 발생했습니다")
+		}
+	}
+
+	// 친구아이디 가져오기
+	if payload.User_id == friend.Friend_1 {
+		*friend_get_id = friend.Friend_2
+		friend.Not_Check_message_number_2 += 1
+	} else {
+		*friend_get_id = friend.Friend_1
+		friend.Not_Check_message_number_1 += 1
+	}
+
+	// 읽지 않은 메세지 추가
+	if result = db.WithContext(c).Save(&friend); result.Error != nil {
+		log.Println("시스템 오류: ", result.Error.Error())
+		return http.StatusInternalServerError, errors.New("데이터 베이스에 친구에 데이터를 업데이트 하는데 오류가 발생했습니다")
+	}
+
+	return 0, nil
+}
+
+// 문자 보내주기 서비스
+func AuthFriendSendMessageUploadMessageFunc(c context.Context, db *gorm.DB, payload *dtos.Payload, friend_message_dto *dtos.AuthFriendSendMessageDto, friend_get_id *uuid.UUID) error {
+
+	// 데이터 저장
+	var (
+		new_messsage servicemodel.FriendChat
+	)
+	new_messsage.Friend_id = friend_message_dto.Friend_id
+	new_messsage.Send_people_id = payload.User_id
+	new_messsage.Address_people_id = *friend_get_id
+	new_messsage.Message = friend_message_dto.Message
+	new_messsage.Text_get_people_check = 1
+	new_messsage.Whether_delete = false
+
+	if result := db.WithContext(c).Create(&new_messsage); result.Error != nil {
+		log.Println("시스템 오류: ", result.Error.Error())
+		return errors.New("데이터 베이스에 새로운 메세지를 저장하는데 오류가 발생했습니다")
+	}
+
+	return nil
 }

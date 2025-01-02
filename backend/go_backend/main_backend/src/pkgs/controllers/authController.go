@@ -14,6 +14,7 @@ type AuthController interface {
 	AuthUserLogoutController(ctx *gin.Context)
 	AuthUserUploadProfileController(ctx *gin.Context)
 	AuthUserGetFriendListController(ctx *gin.Context)
+	AuthFriendSendMessageController(ctx *gin.Context)
 }
 
 // 유저의 이메일과 닉네임을 가져오는 로직
@@ -155,4 +156,43 @@ func AuthUserGetFriendListController(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, friend_lists)
+}
+
+// 친구에게 메세지를 보내는 로직
+func AuthFriendSendMessageController(ctx *gin.Context) {
+
+	var (
+		payload     *dtos.Payload
+		errorStatus int
+		err         error
+	)
+
+	// payload 가져오는 로직
+	if payload, err = services.AuthParsePayloadService(ctx); err != nil {
+		ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	// 데이터 가져오기
+	var (
+		friend_message_dto dtos.AuthFriendSendMessageDto
+	)
+	if err = friend_message_dto.AuthFriendSendMessageParseAndPayloadFunc(ctx); err != nil {
+		ctx.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	// 메세지 보내기
+	if errorStatus, err = services.AuthFriendSendMessageService(payload, &friend_message_dto); err != nil {
+		ctx.AbortWithStatusJSON(errorStatus, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	ctx.AbortWithStatus(http.StatusOK)
 }

@@ -10,13 +10,13 @@ import (
 
 type Friend struct {
 	gorm.Model
-	Friend_id                uuid.UUID `gorm:"type:uuid;unique;not null;"`
-	Friend_1                 uuid.UUID `gorm:"type:uuid;uniqueIndex:idx_friends;not null;"`
-	Friend_2                 uuid.UUID `gorm:"type:uuid;uniqueIndex:idx_friends;not null;"`
-	Friend_1_like            bool      `gorm:"not null;default:false;"`
-	Friend_2_like            bool      `gorm:"not null;default:false;"`
-	Not_Check_message_number int       `gorm:"type:int;not null;default:0;"`
-
+	Friend_id                  uuid.UUID `gorm:"type:uuid;unique;not null;"`
+	Friend_1                   uuid.UUID `gorm:"type:uuid;uniqueIndex:idx_friends;not null;"`
+	Friend_2                   uuid.UUID `gorm:"type:uuid;uniqueIndex:idx_friends;not null;"`
+	Friend_1_like              bool      `gorm:"not null;default:false;"`
+	Friend_2_like              bool      `gorm:"not null;default:false;"`
+	Not_Check_message_number_1 int       `gorm:"type:int;not null;default:0;"`
+	Not_Check_message_number_2 int       `gorm:"type:int;not null;default:0;"`
 	// 관계 모음
 	Friend_chat []FriendChat `gorm:"foreignKey:friend_id;references:friend_id;constraint:OnUpdate:CASCADE,OnDelete:SET NULL;"`
 }
@@ -50,6 +50,16 @@ func (f *Friend) BeforeCreate(tx *gorm.DB) error {
 				return errors.New("데이터 베이스에서 유저 정보를 찾는데 오류가 발생했습니다 (두번째 친구)")
 			}
 		}
+	}
+
+	return nil
+}
+
+// 테이블을 수정할때 확인하는 함수
+func (f *Friend) BeforeSave(tx *gorm.DB) error {
+
+	if f.Not_Check_message_number_1 < 0 || f.Not_Check_message_number_2 < 0 {
+		return errors.New("친구가 메세지를 확인하지 못한 메세지에 갯수는 음수가 나올수가 없습니다")
 	}
 
 	return nil

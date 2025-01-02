@@ -15,6 +15,9 @@
 - friendChat, deleteFriendChat 모델 생성
 - preparefriendstatus 모델 생성
 
+4. 0103
+- friend_chat 테이블에 않읽은 사람이 누구인지 체크
+
 # 배운점
 
 1. 유저의 모든 권한을 가져가는 명령어
