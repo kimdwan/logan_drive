@@ -25,6 +25,7 @@ import (
 type WebsocketService interface {
 	WebsocketTranslateService(ctx *gin.Context) (*websocket.Conn, error)
 	WebsocketUserStatusService(user_computer_number *dtos.WebsocketUserComputerNumberDto, friend_statuses *[]dtos.WebsocketFriendStatusDto, limit_count int) (int, error)
+	WebsocketFriendCheckMessagesService(check_friend *dtos.WebsocketFriendCheckDto, message_datas *[]dtos.WebsocketFriendMessageDto) (int, error)
 }
 
 // websokcet으로 변환 시켜주는 함수
@@ -299,6 +300,132 @@ func WebsocketUserStatusVerifyFriendConnectFunc(c context.Context, db *gorm.DB, 
 				}
 			}
 		}
+
+		mutex.Unlock()
+
+	}
+
+}
+
+// 문자 메세지 읽기
+func WebsocketFriendCheckMessagesService(check_friend *dtos.WebsocketFriendCheckDto, message_datas *[]dtos.WebsocketFriendMessageDto) (int, error) {
+
+	var (
+		db           *gorm.DB = settings.DB
+		user_id      uuid.UUID
+		friend_chats []servicemodel.FriendChat
+		errorStatus  int
+		err          error
+	)
+	c, cancel := context.WithTimeout(context.Background(), time.Second*100)
+	defer cancel()
+
+	// 유저 정보와 친구 정보 가져오기
+	if errorStatus, err = WebsocketFriendCheckMessagesFindUserAndFriendFunc(c, db, check_friend, &user_id, &friend_chats); err != nil {
+		return errorStatus, err
+	}
+
+	if len(friend_chats) == 0 {
+		return 0, nil
+	}
+
+	// 데이터 가져오고 업데이트 하기
+	if err = WebsocketFriendCheckMessagesWantDataFindUpFunc(c, db, &user_id, &friend_chats, message_datas); err != nil {
+		return http.StatusInternalServerError, err
+	}
+
+	return 0, nil
+}
+
+type WebsocketFriendCheckMessages interface {
+	WebsocketFriendCheckMessagesFindUserAndFriendFunc(c context.Context, db *gorm.DB, check_friend *dtos.WebsocketFriendCheckDto, user_id *uuid.UUID, friend_chats *[]servicemodel.FriendChat) (int, error)
+	WebsocketFriendCheckMessagesWantDataFindUpFunc(c context.Context, db *gorm.DB, user_id *uuid.UUID, friend_chats *[]servicemodel.FriendChat, message_datas *[]dtos.WebsocketFriendMessageDto) error
+}
+
+// 유저 정보와 친구 정보 가져오기
+func WebsocketFriendCheckMessagesFindUserAndFriendFunc(c context.Context, db *gorm.DB, check_friend *dtos.WebsocketFriendCheckDto, user_id *uuid.UUID, friend_chats *[]servicemodel.FriendChat) (int, error) {
+
+	// 유저 정보 찾기
+	var (
+		user servicemodel.User
+	)
+	result := db.WithContext(c).Where("computer_number = ?", check_friend.Computer_number).First(&user)
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			log.Println("찾을수 없는 컴퓨터 넘버")
+			return http.StatusBadRequest, errors.New("클라이언트에서 보낸 컴퓨터 넘버를 다시 확인하세요")
+		} else {
+			log.Println("시스템 오류: ", result.Error.Error())
+			return http.StatusInternalServerError, errors.New("데이터 베이스에서 유저의 정보를 찾는데 오류가 발생했습니다")
+		}
+	}
+
+	*user_id = user.User_id
+
+	// 데이터 찾기
+	var now = time.Now().AddDate(0, -1, 0)
+	if result = db.WithContext(c).Where("friend_id = ? AND updated_at > ? AND whether_delete = ?", check_friend.Friend_id, now, false).Order("created_at ASC").Find(friend_chats); result.Error != nil {
+		if !errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			log.Println("시스템 오류: ", result.Error.Error())
+			return http.StatusInternalServerError, errors.New("데이터 베이스에서 친구와 데화한 내용을 찾는데 오류가 발생했습니다")
+		}
+	}
+
+	return 0, nil
+}
+
+// 필요한 메세지 데이터만 가져오고 저장하기
+func WebsocketFriendCheckMessagesWantDataFindUpFunc(c context.Context, db *gorm.DB, user_id *uuid.UUID, friend_chats *[]servicemodel.FriendChat, message_datas *[]dtos.WebsocketFriendMessageDto) error {
+
+	// 데이터 가져오기
+	var (
+		wg    sync.WaitGroup
+		mutex sync.Mutex
+	)
+
+	wg.Add(1)
+	go WebsocketFriendCheckMessageWantDataFindUpParseDataFunc(&wg, &mutex, user_id, friend_chats, message_datas)
+	wg.Wait()
+
+	// 데이터 업데이트
+	if result := db.WithContext(c).Save(friend_chats); result.Error != nil {
+		log.Println("시스템 오류: ", result.Error.Error())
+		return errors.New("데이터를 업데이트 하는데 오류가 발생했습니다")
+	}
+
+	return nil
+}
+
+type WebsocketFriendCheckMessageWantDataFindUp interface {
+	WebsocketFriendCheckMessageWantDataFindUpParseDataFunc(wg *sync.WaitGroup, mutex *sync.Mutex, user_id *uuid.UUID, friend_chats *[]servicemodel.FriendChat, message_datas *[]dtos.WebsocketFriendMessageDto)
+}
+
+// 메세지 읽어오는 로직
+func WebsocketFriendCheckMessageWantDataFindUpParseDataFunc(wg *sync.WaitGroup, mutex *sync.Mutex, user_id *uuid.UUID, friend_chats *[]servicemodel.FriendChat, message_datas *[]dtos.WebsocketFriendMessageDto) {
+
+	defer wg.Done()
+	for idx, frined_chat := range *friend_chats {
+		var (
+			message_data dtos.WebsocketFriendMessageDto
+		)
+
+		mutex.Lock()
+
+		// 수신자 체크
+		if *user_id == frined_chat.Send_people_id {
+			message_data.ReadType = "send"
+			message_data.Message_number = frined_chat.Text_get_people_check
+		} else {
+			message_data.ReadType = "access"
+			(*friend_chats)[idx].Text_get_people_check = 0
+			message_data.Message_number = 0
+		}
+
+		// 데이터 정리
+		message_data.Message = frined_chat.Message
+		message_data.Date = frined_chat.CreatedAt
+
+		(*message_datas) = append((*message_datas), message_data)
 
 		mutex.Unlock()
 

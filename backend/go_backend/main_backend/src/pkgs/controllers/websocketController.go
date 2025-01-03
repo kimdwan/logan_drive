@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"net/http"
 	"time"
@@ -15,6 +16,7 @@ import (
 type WebsocketController interface {
 	WebsocketTestController(ctx *gin.Context)
 	WebsocketUserStatusController(ctx *gin.Context)
+	WebsocketFriendCheckMessagesController(ctx *gin.Context)
 }
 
 // 테스트용 컨트롤러
@@ -144,4 +146,95 @@ func WebsocketUserStatusController(ctx *gin.Context) {
 
 	}
 
+}
+
+// 메세지를 실시간으로 확인하는 로직
+func WebsocketFriendCheckMessagesController(ctx *gin.Context) {
+
+	var (
+		conn        *websocket.Conn
+		errorStatus int
+		err         error
+	)
+
+	// conn 가져오기
+	if conn, err = services.WebsocketTranslateService(ctx); err != nil {
+		ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+	defer conn.Close()
+
+	// 첫데이터 읽고 사용하기
+	var (
+		client_data   dtos.WebsocketFriendCheckDto
+		message_datas []dtos.WebsocketFriendMessageDto
+		errorMsg      dtos.WebsocketErrorPackDto
+	)
+	c, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// 첫번째로 보내야 하는 데이터
+	go func() {
+		for {
+			// 클라이언트에서 보낸 데이터 읽기
+			if err = client_data.WebsocketSendFriendMessageParseBodyFunc(conn); err != nil {
+				log.Println(err.Error())
+				cancel()
+				return
+			} else {
+				// 첫번째 서치
+				if errorStatus, err = services.WebsocketFriendCheckMessagesService(&client_data, &message_datas); err != nil {
+					log.Println(err.Error())
+					errorMsgByte, _ := json.Marshal(errorMsg)
+					if err = conn.WriteMessage(websocket.TextMessage, errorMsgByte); err != nil {
+						log.Println("시스템 오류: ", err.Error())
+						cancel()
+						return
+					}
+					cancel()
+					return
+				} else {
+					msgDataByte, _ := json.Marshal(message_datas)
+					if err = conn.WriteMessage(websocket.TextMessage, msgDataByte); err != nil {
+						log.Println("시스템 오류: ", err.Error())
+						cancel()
+						return
+					}
+				}
+			}
+		}
+	}()
+
+	// 5초 간격 서치
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			if errorStatus, err = services.WebsocketFriendCheckMessagesService(&client_data, &message_datas); err != nil {
+				log.Println("시스템 오류: ", err.Error())
+				errorMsg.Error = err.Error()
+				errorMsg.Status = errorStatus
+				errorMsgByte, _ := json.Marshal(errorMsg)
+				if err = conn.WriteMessage(websocket.TextMessage, errorMsgByte); err != nil {
+					log.Println("시스템 오류: ", err.Error())
+					cancel()
+					return
+				}
+				cancel()
+				return
+			} else {
+				msg_data_byte, _ := json.Marshal(message_datas)
+				if err = conn.WriteMessage(websocket.TextMessage, msg_data_byte); err != nil {
+					log.Println("시스템 오류: ", err.Error())
+					cancel()
+					return
+				}
+			}
+		case <-c.Done():
+			return
+		}
+	}
 }

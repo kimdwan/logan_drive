@@ -15,4 +15,8 @@ func WebsocketRouter(router *gin.Engine) {
 	// 유저가 사용하는 웹소켓
 	wsuserrouter := wsrouter.Group("user")
 	wsuserrouter.GET("status", controllers.WebsocketUserStatusController)
+
+	// 친구와 관련된 웹소켓
+	wsfriendrouter := wsrouter.Group("friend")
+	wsfriendrouter.GET("check/message", controllers.WebsocketFriendCheckMessagesController)
 }
