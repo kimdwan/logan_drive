@@ -26,4 +26,5 @@ func AuthRouter(router *gin.Engine) {
 	// 친구창 관리와 관련된 라우터
 	authfriendrouter := authrouter.Group("friend")
 	authfriendrouter.POST("send/message", controllers.AuthFriendSendMessageController)
+	authfriendrouter.POST("request", controllers.AuthFriendRequestController)
 }

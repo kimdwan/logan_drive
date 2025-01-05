@@ -141,3 +141,8 @@ func (a *AuthFriendSendMessageDto) AuthFriendSendMessageParseAndPayloadFunc(ctx 
 
 	return nil
 }
+
+// 친구요청을 보낼때 사용하는 스트럭트
+type AuthFriendRequestEmailDto struct {
+	Email string `json:"email" validate:"required,email"`
+}

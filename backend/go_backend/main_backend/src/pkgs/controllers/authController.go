@@ -15,6 +15,7 @@ type AuthController interface {
 	AuthUserUploadProfileController(ctx *gin.Context)
 	AuthUserGetFriendListController(ctx *gin.Context)
 	AuthFriendSendMessageController(ctx *gin.Context)
+	AuthFriendRequestController(ctx *gin.Context)
 }
 
 // 유저의 이메일과 닉네임을 가져오는 로직
@@ -195,4 +196,43 @@ func AuthFriendSendMessageController(ctx *gin.Context) {
 	}
 
 	ctx.AbortWithStatus(http.StatusOK)
+}
+
+// 친구 요청
+func AuthFriendRequestController(ctx *gin.Context) {
+
+	var (
+		payload          *dtos.Payload
+		friend_email_dto *dtos.AuthFriendRequestEmailDto
+		errorStatus      int
+		err              error
+	)
+
+	// payload 가져오기
+	if payload, err = services.AuthParsePayloadService(ctx); err != nil {
+		ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	// body 가져오기
+	if friend_email_dto, err = services.AuthParseAndValidateBodyService[dtos.AuthFriendRequestEmailDto](ctx); err != nil {
+		ctx.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	// 친구요청을 처리하는 함수
+	if errorStatus, err = services.AuthFriendRequestService(payload, friend_email_dto); err != nil {
+		ctx.AbortWithStatusJSON(errorStatus, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusCreated, gin.H{
+		"message": "친구 요청 완료",
+	})
 }

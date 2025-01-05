@@ -21,6 +21,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/gin-gonic/gin"
+	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
 	servicemodel "github.com/kimdwan/logan_drive/models/serviceModel"
 	"github.com/kimdwan/logan_drive/settings"
@@ -36,6 +37,7 @@ type AuthService interface {
 	AuthUserUploadProfileService(ctx *gin.Context, payload *dtos.Payload) error
 	AuthUserGetFriendListService(payload *dtos.Payload, friend_lists *[]dtos.AuthUserFriendListDto) (int, error)
 	AuthFriendSendMessageService(payload *dtos.Payload, friend_message_dto *dtos.AuthFriendSendMessageDto) (int, error)
+	AuthFriendRequestService(payload *dtos.Payload, friend_email_dto *dtos.AuthFriendRequestEmailDto) (int, error)
 }
 
 // payload를 제공하는 함수
@@ -53,6 +55,29 @@ func AuthParsePayloadService(ctx *gin.Context) (*dtos.Payload, error) {
 	}
 
 	return &payload, nil
+}
+
+// 클라이언트에서 보낸 데이터를 파싱해주는 함수
+func AuthParseAndValidateBodyService[T dtos.AuthFriendRequestEmailDto](ctx *gin.Context) (*T, error) {
+	var (
+		body T
+		err  error
+	)
+
+	// 클라이언트 값 파싱
+	if err = ctx.ShouldBindBodyWithJSON(&body); err != nil {
+		log.Println("시스템 오류: ", err.Error())
+		return nil, errors.New("(json) 클라이언트 폼을 파싱하는데 오류가 발생했습니다")
+	}
+
+	// validate 검증
+	validate := validator.New()
+	if err = validate.Struct(body); err != nil {
+		log.Println("시스템 오류: ", err.Error())
+		return nil, errors.New("(validate) 클라이언트 폼을 검증하는데 오류가 발생했습니다")
+	}
+
+	return &body, nil
 }
 
 // 유저의 이메일과 닉네임을 제공하는 함수
@@ -676,4 +701,104 @@ func AuthFriendSendMessageUploadMessageFunc(c context.Context, db *gorm.DB, payl
 	}
 
 	return nil
+}
+
+// 친구 요청 받아주기 서비스
+func AuthFriendRequestService(payload *dtos.Payload, friend_email_dto *dtos.AuthFriendRequestEmailDto) (int, error) {
+
+	var (
+		db          *gorm.DB = settings.DB
+		friend_id   uuid.UUID
+		errorStatus int
+		err         error
+	)
+	c, cancel := context.WithTimeout(context.Background(), time.Second*100)
+	defer cancel()
+
+	// 사용자의 아이디를 추출한 후 대기 목록도 확인하는 함수
+	if errorStatus, err = AuthFriendRequestFindUserEmailAndCheckAssignFunc(c, db, payload, friend_email_dto, &friend_id); err != nil {
+		return errorStatus, err
+	}
+
+	// 사용자 대기 명단에 추가하는 함수
+	if err = AuthFriendRequestCreatePostponeDatabaseFunc(c, db, payload, &friend_id); err != nil {
+		return http.StatusInternalServerError, err
+	}
+
+	return 0, nil
+}
+
+type AuthFriendRequest interface {
+	AuthFriendRequestFindUserEmailAndCheckAssignFunc(c context.Context, db *gorm.DB, payload *dtos.Payload, friend_email_dto *dtos.AuthFriendRequestEmailDto, friend_id *uuid.UUID) (int, error)
+	AuthFriendRequestCreatePostponeDatabaseFunc(c context.Context, db *gorm.DB, payload *dtos.Payload, friend_id *uuid.UUID) error
+}
+
+// 사용자의 아이디를 추출하고 대기 목록에 존재하는지 확인
+func AuthFriendRequestFindUserEmailAndCheckAssignFunc(c context.Context, db *gorm.DB, payload *dtos.Payload, friend_email_dto *dtos.AuthFriendRequestEmailDto, friend_id *uuid.UUID) (int, error) {
+
+	// 친구 이메일이 존재하는지 확인하고 배정
+	var (
+		friend servicemodel.User
+	)
+	result := db.WithContext(c).Where("email = ?", friend_email_dto.Email).First(&friend)
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			log.Println("친구의 이메일을 찾을수가 없습니다")
+			return http.StatusBadRequest, errors.New("친구의 이메일을 다시 확인해야 함")
+		} else {
+			log.Println("시스템 오류: ", result.Error.Error())
+			return http.StatusInternalServerError, errors.New("데이터 베이스에서 친구 이메일과 관련된 데이터를 찾는데 오류가 발생했습니다")
+		}
+	}
+	*friend_id = friend.User_id
+
+	// 대기 목록 확인 (차단 또는 존재하는가?)
+	var (
+		prepare_friend_user servicemodel.PrepareFriend
+	)
+	if result = db.WithContext(c).Where("request_id = ? AND approve_id = ?", payload.User_id, friend.User_id).First(&prepare_friend_user); result.Error != nil {
+		if !errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			log.Println("시스템 오류: ", result.Error.Error())
+			return http.StatusInternalServerError, errors.New("데이터 베이스에서 친구요청 데이타를 찾는데 오류가 발생했습니다")
+		}
+	} else {
+		var (
+			system_prepare_user_statuses []string = strings.Split(os.Getenv("DATABASE_PREVIOUS_FRIEND_STATUS_TYPE"), ",")
+		)
+		if prepare_friend_user.Status == system_prepare_user_statuses[0] || prepare_friend_user.Status == system_prepare_user_statuses[3] {
+			log.Println("이미 친구이거나 요청을 보냄")
+			return http.StatusNotAcceptable, errors.New("이미 친구요청을 보냈거나 이미 친구인 유저 입니다")
+		} else if prepare_friend_user.Status == system_prepare_user_statuses[2] {
+			log.Println("차단한 유저")
+			return http.StatusNotExtended, errors.New("친구 요청을 보낼수 없는 유저입니다")
+		} else {
+			if result = db.WithContext(c).Unscoped().Delete(&friend); result.Error != nil {
+				log.Println("시스템 오류: ", result.Error.Error())
+				return http.StatusInternalServerError, errors.New("데이터 베이스에서 친구의 정보를 삭제하는데 오류가 발생했습니다")
+			}
+		}
+	}
+
+	return 0, nil
+}
+
+// 사용자의 대기 목록에 추가하는 함수
+func AuthFriendRequestCreatePostponeDatabaseFunc(c context.Context, db *gorm.DB, payload *dtos.Payload, friend_id *uuid.UUID) error {
+
+	var (
+		new_putoff_friend servicemodel.PrepareFriend
+		system_statuses   []string = strings.Split(os.Getenv("DATABASE_PREVIOUS_FRIEND_STATUS_TYPE"), ",")
+	)
+	new_putoff_friend.Request_id = payload.User_id
+	new_putoff_friend.Approve_id = *friend_id
+	new_putoff_friend.Status = system_statuses[0]
+
+	result := db.WithContext(c).Create(&new_putoff_friend)
+	if result.Error != nil {
+		log.Println("시스템 오류: ", result.Error.Error())
+		return errors.New("데이터 베이스에 새로운 친구 요청을 추가하는데 오류가 발생했습니다")
+	}
+
+	return nil
+
 }
