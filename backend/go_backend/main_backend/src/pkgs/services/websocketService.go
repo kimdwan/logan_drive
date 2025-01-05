@@ -2,16 +2,21 @@ package services
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
@@ -24,8 +29,10 @@ import (
 
 type WebsocketService interface {
 	WebsocketTranslateService(ctx *gin.Context) (*websocket.Conn, error)
+	WebsocketSendErrorMsgService(conn *websocket.Conn, errorStatus int, err error)
 	WebsocketUserStatusService(user_computer_number *dtos.WebsocketUserComputerNumberDto, friend_statuses *[]dtos.WebsocketFriendStatusDto, limit_count int) (int, error)
 	WebsocketFriendCheckMessagesService(check_friend *dtos.WebsocketFriendCheckDto, message_datas *[]dtos.WebsocketFriendMessageDto) (int, error)
+	WebsocketFriendAdmitFriendAppealService(computer_number_dto *dtos.WebsocketUserComputerNumberDto, user_datas *[]dtos.WebsocketStreamFriendAllowStatusDto) (int, error)
 }
 
 // websokcet으로 변환 시켜주는 함수
@@ -118,6 +125,26 @@ func WebsocketParseDataService[T dtos.WebsocketUserComputerNumberDto](conn *webs
 	}
 
 	return &client_data, nil
+}
+
+// 에러 메세지를 반환해주는 함수
+func WebsocketSendErrorMsgService(conn *websocket.Conn, errorStatus int, err error) {
+
+	var (
+		errorBox = dtos.WebsocketErrorPackDto{
+			Error:  err.Error(),
+			Status: errorStatus,
+		}
+	)
+
+	errorBoxByte, err := json.Marshal(&errorBox)
+	if err != nil {
+		log.Println("시스템 오류: ", err.Error())
+	}
+
+	if err = conn.WriteMessage(websocket.TextMessage, errorBoxByte); err != nil {
+		log.Println("시스템 오류: ", err.Error())
+	}
 }
 
 // 웹소켓에서 실시간으로 데이터를 보내주는 함수
@@ -429,6 +456,194 @@ func WebsocketFriendCheckMessageWantDataFindUpParseDataFunc(wg *sync.WaitGroup, 
 
 		mutex.Unlock()
 
+	}
+
+}
+
+// 친구요청 정보를 실시간으로 확인해주는 함수
+func WebsocketFriendAdmitFriendAppealService(computer_number_dto *dtos.WebsocketUserComputerNumberDto, user_datas *[]dtos.WebsocketStreamFriendAllowStatusDto) (int, error) {
+
+	var (
+		db          *gorm.DB = settings.DB
+		CheckDatas  []dtos.WebsocketCheckPrepareDto
+		errorStatus int
+		err         error
+	)
+	c, cancel := context.WithTimeout(context.Background(), time.Second*100)
+	defer cancel()
+
+	// 요청온 친구의 정보를 실시간으로 확인하고 체크하는 함수
+	if errorStatus, err = WebsocketFriendAdmitFriendAppealDataCheckFunc(c, db, &CheckDatas, computer_number_dto); err != nil {
+		return errorStatus, err
+	}
+
+	if len(CheckDatas) == 0 {
+		return 0, nil
+	}
+
+	// 요청온 데이터를 확인하고 정보를 가져오는 함수
+	if errorStatus, err = WebsocketFriendAdmitGetPostPoneUserProfileFunc(c, db, &CheckDatas, user_datas); err != nil {
+		return errorStatus, err
+	}
+
+	return 0, nil
+}
+
+type WebsocketFriendAdmitFriendAppeal interface {
+	WebsocketFriendAdmitFriendAppealDataCheckFunc(c context.Context, db *gorm.DB, CheckDatas *[]dtos.WebsocketCheckPrepareDto, computer_number_dto *dtos.WebsocketUserComputerNumberDto) (int, error)
+	WebsocketFriendAdmitGetPostPoneUserProfileFunc(c context.Context, db *gorm.DB, CheckDatas *[]dtos.WebsocketCheckPrepareDto, websocketStreamDtos *[]dtos.WebsocketStreamFriendAllowStatusDto) (int, error)
+}
+
+// 요청온 친구의 정보를 실시간으로 확인하고 체크하는 함수
+func WebsocketFriendAdmitFriendAppealDataCheckFunc(c context.Context, db *gorm.DB, CheckDatas *[]dtos.WebsocketCheckPrepareDto, computer_number_dto *dtos.WebsocketUserComputerNumberDto) (int, error) {
+
+	// 유저 정보부터 확인
+	var (
+		user servicemodel.User
+	)
+	result := db.WithContext(c).Where("computer_number = ?", computer_number_dto.Computer_number).First(&user)
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			log.Println("해당 유저를 찾을 수 없음")
+			return http.StatusBadRequest, errors.New("컴퓨터 넘버가 잘못되었습니다 다시 확인해주세요")
+		} else {
+			log.Println("시스템 오류: ", result.Error.Error())
+			return http.StatusInternalServerError, errors.New("데이터 베이스에서 유저의 정보를 찾는데 오류가 발생했습니다")
+		}
+	}
+
+	// 친구창 온거 데이터 확인
+	var (
+		prepare_friends []servicemodel.PrepareFriend
+	)
+	if result = db.WithContext(c).Where("approve_id = ?", user.User_id).Order("created_at ASC").Find(&prepare_friends); result.Error != nil {
+		log.Println("시스템 오류: ", result.Error.Error())
+		return http.StatusInternalServerError, errors.New("데이터 베이스에서 승인 유저를 찾는데 오류가 발생했습니다")
+	}
+
+	// 데이터 정리
+	var (
+		wg    sync.WaitGroup
+		mutex sync.Mutex
+	)
+	wg.Add(1)
+	go WebsocketFriendAdmitFriendAppealDataCheckOrganizeFunc(&wg, &mutex, &prepare_friends, CheckDatas)
+	wg.Wait()
+
+	return 0, nil
+}
+
+type WebsocketFriendAdmitFriendAppealDataCheck interface {
+	WebsocketFriendAdmitFriendAppealDataCheckOrganizeFunc(wg *sync.WaitGroup, mutex *sync.Mutex, prepare_friends *[]servicemodel.PrepareFriend, CheckDatas *[]dtos.WebsocketCheckPrepareDto)
+}
+
+// 친구 요청을 보낸 사람들의 아이디를 가져오는 함수
+func WebsocketFriendAdmitFriendAppealDataCheckOrganizeFunc(wg *sync.WaitGroup, mutex *sync.Mutex, prepare_friends *[]servicemodel.PrepareFriend, CheckDatas *[]dtos.WebsocketCheckPrepareDto) {
+	defer wg.Done()
+	for _, prepare_friend := range *prepare_friends {
+		var (
+			system_statuses []string = strings.Split(os.Getenv("DATABASE_PREVIOUS_FRIEND_STATUS_TYPE"), ",")
+		)
+		mutex.Lock()
+		if prepare_friend.Status == system_statuses[0] {
+			var prepare_id = dtos.WebsocketCheckPrepareDto{
+				Request_id:  prepare_friend.Request_id,
+				Postpone_id: prepare_friend.Prepare_id,
+			}
+			*CheckDatas = append(*CheckDatas, prepare_id)
+		}
+		mutex.Unlock()
+	}
+
+}
+
+// 유저의 데이터를 가져오는 함수
+func WebsocketFriendAdmitGetPostPoneUserProfileFunc(c context.Context, db *gorm.DB, CheckDatas *[]dtos.WebsocketCheckPrepareDto, websocketStreamDtos *[]dtos.WebsocketStreamFriendAllowStatusDto) (int, error) {
+
+	var (
+		s3Client *s3.Client = settings.S3Client
+		wg       sync.WaitGroup
+		mutex    sync.Mutex
+		errorBox []error
+	)
+
+	wg.Add(1)
+	go WebsocketFriendAdmitGetPostPoneUserProfileWorkOnFunc(c, &wg, &mutex, db, s3Client, CheckDatas, websocketStreamDtos, &errorBox)
+	wg.Wait()
+
+	if len(errorBox) != 0 {
+		return http.StatusInternalServerError, errors.New("데이터 베이스에서 유저 정보를 찾는데 오류가 발생했습니다")
+	}
+
+	return 0, nil
+}
+
+type WebsocketFriendAdmitGetPostPoneUserProfile interface {
+	WebsocketFriendAdmitGetPostPoneUserProfileWorkOnFunc(c context.Context, wg *sync.WaitGroup, mutex *sync.Mutex, db *gorm.DB, s3Client *s3.Client, CheckDatas *[]dtos.WebsocketCheckPrepareDto, websocketStreamDtos *[]dtos.WebsocketStreamFriendAllowStatusDto, errorBox *[]error)
+}
+
+// 데이터 수집 함수
+func WebsocketFriendAdmitGetPostPoneUserProfileWorkOnFunc(c context.Context, wg *sync.WaitGroup, mutex *sync.Mutex, db *gorm.DB, s3Client *s3.Client, CheckDatas *[]dtos.WebsocketCheckPrepareDto, websocketStreamDtos *[]dtos.WebsocketStreamFriendAllowStatusDto, errorBox *[]error) {
+
+	defer wg.Done()
+	for _, check_data := range *CheckDatas {
+		// 유저 데이터에서 정보 찾기
+		var (
+			user servicemodel.User
+		)
+		mutex.Lock()
+		result := db.WithContext(c).Where("user_id = ?", check_data.Request_id).First(&user)
+		if result.Error != nil {
+			if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+				log.Println("존재하지 않는 유저")
+			} else {
+				log.Println("시스템 오류: ", result.Error.Error())
+				*errorBox = append(*errorBox, errors.New("데이터를 수집하는데 오류가 발생했습니다"))
+			}
+		}
+
+		// 데이터 정리
+		var (
+			websocketStreamDto dtos.WebsocketStreamFriendAllowStatusDto
+		)
+		websocketStreamDto.Prepare_id = check_data.Postpone_id
+		websocketStreamDto.Friend_email = user.Email
+		websocketStreamDto.Friend_nickname = user.Nickname
+		websocketStreamDto.Friend_title = user.User_title
+
+		// 유저의 사진 가져오기
+		if user.User_profile_img != nil {
+			var (
+				bucket_name         string = os.Getenv("AWS_BUCKET_NAME")
+				file_server_profile string = os.Getenv("FILE_SERVER_USER_PROFILE_IMG")
+				profile_name               = *user.User_profile_img
+			)
+			file_position := filepath.Join(file_server_profile, user.User_id.String(), profile_name)
+			if s3_result, err := s3Client.GetObject(c, &s3.GetObjectInput{
+				Bucket: aws.String(bucket_name),
+				Key:    aws.String(file_position),
+			}); err != nil {
+				log.Println("시스템 오류: ", err.Error())
+				*errorBox = append(*errorBox, err)
+			} else {
+				defer s3_result.Body.Close()
+				user_email_data, err := io.ReadAll(s3_result.Body)
+				if err != nil {
+					log.Println("시스템 오류: ", err.Error())
+					*errorBox = append(*errorBox, err)
+				}
+
+				basedata := base64.StdEncoding.EncodeToString(user_email_data)
+				websocketStreamDto.Friend_imgbase64 = basedata
+			}
+
+			// 프로필 데이터의 타입
+			profile_data_types := strings.Split(profile_name, ".")
+			websocketStreamDto.Friend_imgtype = profile_data_types[len(profile_data_types)-1]
+		}
+
+		*websocketStreamDtos = append(*websocketStreamDtos, websocketStreamDto)
+		mutex.Unlock()
 	}
 
 }

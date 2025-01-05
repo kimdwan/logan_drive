@@ -17,6 +17,7 @@ type WebsocketController interface {
 	WebsocketTestController(ctx *gin.Context)
 	WebsocketUserStatusController(ctx *gin.Context)
 	WebsocketFriendCheckMessagesController(ctx *gin.Context)
+	WebsocketFriendAdmitFriendAppealController(ctx *gin.Context)
 }
 
 // 테스트용 컨트롤러
@@ -231,6 +232,91 @@ func WebsocketFriendCheckMessagesController(ctx *gin.Context) {
 					log.Println("시스템 오류: ", err.Error())
 					cancel()
 					return
+				}
+			}
+		case <-c.Done():
+			return
+		}
+	}
+}
+
+// 친구창온거 실시간으로 확인
+func WebsocketFriendAdmitFriendAppealController(ctx *gin.Context) {
+
+	var (
+		conn *websocket.Conn
+		err  error
+	)
+
+	// conn 연결
+	if conn, err = services.WebsocketTranslateService(ctx); err != nil {
+		ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+	defer conn.Close()
+
+	// 보낸 데이터 확인
+	var (
+		computer_number_dto *dtos.WebsocketUserComputerNumberDto
+		user_datas          []dtos.WebsocketStreamFriendAllowStatusDto
+		errorStatus         int
+	)
+	c, cancel := context.WithCancel(ctx)
+
+	defer cancel()
+	go func() {
+		for {
+			if computer_number_dto, err = services.WebsocketParseDataService[dtos.WebsocketUserComputerNumberDto](conn, websocket.TextMessage); err != nil {
+				cancel()
+				return
+			} else {
+				// 첫번째 작동
+				if errorStatus, err = services.WebsocketFriendAdmitFriendAppealService(computer_number_dto, &user_datas); err != nil {
+					services.WebsocketSendErrorMsgService(conn, errorStatus, err)
+					cancel()
+					return
+				} else {
+					user_data_byte, err := json.Marshal(&user_datas)
+					if err != nil {
+						log.Println("시스템 오류: ", err.Error())
+						cancel()
+						return
+					} else {
+						if err = conn.WriteMessage(websocket.TextMessage, user_data_byte); err != nil {
+							log.Println("시스템 오류: ", err.Error())
+							cancel()
+							return
+						}
+					}
+				}
+			}
+		}
+	}()
+
+	// 주기적으로 데이터를 보내주는 함수
+	ticker := time.NewTicker(time.Second * 5)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			if errorStatus, err = services.WebsocketFriendAdmitFriendAppealService(computer_number_dto, &user_datas); err != nil {
+				services.WebsocketSendErrorMsgService(conn, errorStatus, err)
+				cancel()
+				return
+			} else {
+				user_data_byte, err := json.Marshal(&user_datas)
+				if err != nil {
+					log.Println("시스템 오류: ", err.Error())
+					cancel()
+					return
+				} else {
+					if err = conn.WriteMessage(websocket.TextMessage, user_data_byte); err != nil {
+						log.Println("시스템 오류: ", err.Error())
+						cancel()
+						return
+					}
 				}
 			}
 		case <-c.Done():

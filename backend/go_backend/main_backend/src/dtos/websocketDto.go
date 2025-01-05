@@ -99,3 +99,19 @@ type WebsocketFriendMessageDto struct {
 	Date           time.Time `json:"time"`
 	Message_number int       `json:"message_number"`
 }
+
+// 친구 요청을 보낸 유저의 정보를 가져오는 틀
+type WebsocketCheckPrepareDto struct {
+	Request_id  uuid.UUID `json:"request_id"`
+	Postpone_id uuid.UUID `json:"postpone_id"`
+}
+
+// 유저가 보낸 데이터를 확인하는 틀
+type WebsocketStreamFriendAllowStatusDto struct {
+	Friend_imgbase64 string    `json:"friend_imgbase64"`
+	Friend_imgtype   string    `json:"friend_imgtype"`
+	Friend_email     string    `json:"friend_email"`
+	Friend_nickname  string    `json:"friend_nickname"`
+	Prepare_id       uuid.UUID `json:"prepare_id"`
+	Friend_title     string    `json:"friend_title"`
+}
