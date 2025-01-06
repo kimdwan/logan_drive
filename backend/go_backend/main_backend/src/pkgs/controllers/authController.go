@@ -16,6 +16,7 @@ type AuthController interface {
 	AuthUserGetFriendListController(ctx *gin.Context)
 	AuthFriendSendMessageController(ctx *gin.Context)
 	AuthFriendRequestController(ctx *gin.Context)
+	AuthFriendCheckVerifyController(ctx *gin.Context)
 }
 
 // 유저의 이메일과 닉네임을 가져오는 로직
@@ -234,5 +235,41 @@ func AuthFriendRequestController(ctx *gin.Context) {
 
 	ctx.JSON(http.StatusCreated, gin.H{
 		"message": "친구 요청 완료",
+	})
+}
+
+// 친구 요청을 확인하는 로직
+func AuthFriendCheckVerifyController(ctx *gin.Context) {
+
+	// 클라이언트에서 보낸 메세지를 확인하기
+	var (
+		client_message *dtos.AuthFriendConfirmTypeDto
+		errorStatus    int
+		err            error
+	)
+	if client_message, err = services.AuthParseAndValidateBodyService[dtos.AuthFriendConfirmTypeDto](ctx); err != nil {
+		ctx.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	} else {
+		if err = client_message.CheckAllowTypeFunc(); err != nil {
+			ctx.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+	}
+
+	// 친구 요청을 확인하는 로직 big o는 상수 줄일거면 프레임 워크를 바꾸는걸 고려해야 함
+	if errorStatus, err = services.AuthFriendCheckVerifyService(client_message); err != nil {
+		ctx.AbortWithStatusJSON(errorStatus, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"message": "처리 완료",
 	})
 }

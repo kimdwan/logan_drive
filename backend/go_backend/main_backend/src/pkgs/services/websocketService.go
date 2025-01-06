@@ -463,6 +463,9 @@ func WebsocketFriendCheckMessageWantDataFindUpParseDataFunc(wg *sync.WaitGroup, 
 // 친구요청 정보를 실시간으로 확인해주는 함수
 func WebsocketFriendAdmitFriendAppealService(computer_number_dto *dtos.WebsocketUserComputerNumberDto, user_datas *[]dtos.WebsocketStreamFriendAllowStatusDto) (int, error) {
 
+	// 유저 데이터를 초기화
+	*user_datas = nil
+
 	var (
 		db          *gorm.DB = settings.DB
 		CheckDatas  []dtos.WebsocketCheckPrepareDto

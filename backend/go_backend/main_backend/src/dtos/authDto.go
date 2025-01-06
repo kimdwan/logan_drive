@@ -146,3 +146,38 @@ func (a *AuthFriendSendMessageDto) AuthFriendSendMessageParseAndPayloadFunc(ctx 
 type AuthFriendRequestEmailDto struct {
 	Email string `json:"email" validate:"required,email"`
 }
+
+// 친구 요청에 대해서 확인하고자 할때 사용함
+type AuthFriendConfirmTypeDto struct {
+	Permit_id  uuid.UUID `json:"permit_id" validate:"required,uuid"`
+	Allow_type string    `json:"allow_type" validate:"required"`
+}
+
+type AuthFriendConfirmType interface {
+	CheckAllowTypeFunc() error
+}
+
+// 해당 허용 타입이 환경변수에서 허용한 것인가
+func (a AuthFriendConfirmTypeDto) CheckAllowTypeFunc() error {
+
+	var (
+		system_allow_types = []string{
+			"allow",
+			"delete",
+		}
+		isAllowedType bool = false
+	)
+
+	for _, allow_type := range system_allow_types {
+		if a.Allow_type == allow_type {
+			isAllowedType = true
+			break
+		}
+	}
+
+	if !isAllowedType {
+		return errors.New("타입을 다시 확인해주세요")
+	}
+
+	return nil
+}

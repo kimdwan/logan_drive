@@ -27,4 +27,5 @@ func AuthRouter(router *gin.Engine) {
 	authfriendrouter := authrouter.Group("friend")
 	authfriendrouter.POST("send/message", controllers.AuthFriendSendMessageController)
 	authfriendrouter.POST("request", controllers.AuthFriendRequestController)
+	authfriendrouter.POST("check/verify", controllers.AuthFriendCheckVerifyController)
 }

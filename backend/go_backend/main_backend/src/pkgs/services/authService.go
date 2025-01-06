@@ -38,6 +38,7 @@ type AuthService interface {
 	AuthUserGetFriendListService(payload *dtos.Payload, friend_lists *[]dtos.AuthUserFriendListDto) (int, error)
 	AuthFriendSendMessageService(payload *dtos.Payload, friend_message_dto *dtos.AuthFriendSendMessageDto) (int, error)
 	AuthFriendRequestService(payload *dtos.Payload, friend_email_dto *dtos.AuthFriendRequestEmailDto) (int, error)
+	AuthFriendCheckVerifyService(confirm_type_dto *dtos.AuthFriendConfirmTypeDto) (int, error)
 }
 
 // payload를 제공하는 함수
@@ -58,7 +59,7 @@ func AuthParsePayloadService(ctx *gin.Context) (*dtos.Payload, error) {
 }
 
 // 클라이언트에서 보낸 데이터를 파싱해주는 함수
-func AuthParseAndValidateBodyService[T dtos.AuthFriendRequestEmailDto](ctx *gin.Context) (*T, error) {
+func AuthParseAndValidateBodyService[T dtos.AuthFriendRequestEmailDto | dtos.AuthFriendConfirmTypeDto](ctx *gin.Context) (*T, error) {
 	var (
 		body T
 		err  error
@@ -772,7 +773,7 @@ func AuthFriendRequestFindUserEmailAndCheckAssignFunc(c context.Context, db *gor
 			log.Println("차단한 유저")
 			return http.StatusNotExtended, errors.New("친구 요청을 보낼수 없는 유저입니다")
 		} else {
-			if result = db.WithContext(c).Unscoped().Delete(&friend); result.Error != nil {
+			if result = db.WithContext(c).Unscoped().Delete(&prepare_friend_user); result.Error != nil {
 				log.Println("시스템 오류: ", result.Error.Error())
 				return http.StatusInternalServerError, errors.New("데이터 베이스에서 친구의 정보를 삭제하는데 오류가 발생했습니다")
 			}
@@ -801,4 +802,98 @@ func AuthFriendRequestCreatePostponeDatabaseFunc(c context.Context, db *gorm.DB,
 
 	return nil
 
+}
+
+// 친구 요청을 받아주는 로직
+func AuthFriendCheckVerifyService(confirm_type_dto *dtos.AuthFriendConfirmTypeDto) (int, error) {
+
+	var (
+		db             *gorm.DB = settings.DB
+		prepare_friend servicemodel.PrepareFriend
+		errorStatus    int
+		err            error
+	)
+	c, cancel := context.WithTimeout(context.Background(), time.Second*100)
+	defer cancel()
+
+	// big o 표기법에 의하면 상수이다.
+	if errorStatus, err = AuthFriendCheckVerifyConfirmPermitIdFunc(c, db, &prepare_friend, confirm_type_dto); err != nil {
+		return errorStatus, err
+	}
+
+	// big o 표기봅에 의해서 상수
+	if err = AuthFriendCheckVerifyConsiderFunc(c, db, &prepare_friend, confirm_type_dto); err != nil {
+		return http.StatusInternalServerError, err
+	}
+
+	return 0, nil
+}
+
+type AuthFriendCheckVerify interface {
+	AuthFriendCheckVerifyConfirmPermitIdFunc(c context.Context, db *gorm.DB, prepare_friend *servicemodel.PrepareFriend, confirm_type_dto *dtos.AuthFriendConfirmTypeDto) (int, error)
+	AuthFriendCheckVerifyConsiderFunc(c context.Context, db *gorm.DB, prepare_friend *servicemodel.PrepareFriend, confirm_type_dto *dtos.AuthFriendConfirmTypeDto) error
+}
+
+// 승인 요청한 아이디가 맞는지 확인하는 로직 빅오는 상수다
+func AuthFriendCheckVerifyConfirmPermitIdFunc(c context.Context, db *gorm.DB, prepare_friend *servicemodel.PrepareFriend, confirm_type_dto *dtos.AuthFriendConfirmTypeDto) (int, error) {
+
+	// 데이터 베이스에서 유저의 정보를 찾는데 오류 발생
+	result := db.WithContext(c).Where("prepare_id = ?", confirm_type_dto.Permit_id).First(prepare_friend)
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			log.Println("찾을수 가 없는 permit 아이디")
+			return http.StatusBadRequest, errors.New("해당 permit_id를 다시 확인해 주세요")
+		} else {
+			log.Println("시스템 오류: ", result.Error.Error())
+			return http.StatusInternalServerError, errors.New("데이터 베이스에서 정보를 찾는데 오류가 발생했습니다")
+		}
+	}
+
+	// 오직 한개의 타입만 사용이 가능해야 함
+	var (
+		system_allow_types []string = strings.Split(os.Getenv("DATABASE_PREVIOUS_FRIEND_STATUS_TYPE"), ",")
+	)
+	if prepare_friend.Status != system_allow_types[0] {
+		log.Println("친구 상태 오류")
+		return http.StatusBadRequest, errors.New("친구 추가를 기다리는 사람만 이용 가능한 서비스 입니다")
+	}
+
+	return 0, nil
+}
+
+// 친구 상태에 따라 처리 해야 함
+func AuthFriendCheckVerifyConsiderFunc(c context.Context, db *gorm.DB, prepare_friend *servicemodel.PrepareFriend, confirm_type_dto *dtos.AuthFriendConfirmTypeDto) error {
+
+	var (
+		system_allow_types []string = strings.Split(os.Getenv("DATABASE_PREVIOUS_FRIEND_STATUS_TYPE"), ",")
+	)
+
+	// 선택에 따라서 바꾼다
+	if confirm_type_dto.Allow_type == "allow" {
+		prepare_friend.Status = system_allow_types[3]
+
+		// 친구 모델에 추가
+		var (
+			friend servicemodel.Friend
+		)
+		friend.Friend_1 = prepare_friend.Request_id
+		friend.Friend_2 = prepare_friend.Approve_id
+
+		result := db.WithContext(c).Create(&friend)
+		if result.Error != nil {
+			log.Println("시스템 오류: ", result.Error.Error())
+			return errors.New("데이터 베이스에 친구 정보를 업데이트 하는데 오류가 발생했습니다")
+		}
+
+	} else {
+		prepare_friend.Status = system_allow_types[1]
+	}
+
+	result := db.WithContext(c).Save(prepare_friend)
+	if result.Error != nil {
+		log.Println("시스템 오류: ", result.Error.Error())
+		return errors.New("친구 요청 시스템을 업데이트 하는데 오류가 발생했습니다")
+	}
+
+	return nil
 }

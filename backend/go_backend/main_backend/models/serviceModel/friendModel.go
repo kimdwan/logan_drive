@@ -31,10 +31,11 @@ func (f *Friend) BeforeCreate(tx *gorm.DB) error {
 
 	// 데이터 베이스에 실제 친구가 존재하는지 확인하는 창
 	var (
-		checkUser User
+		checkUser_1 User
+		checkUser_2 User
 	)
 
-	if result := tx.Where("user_id = ?", f.Friend_1).First(&checkUser); result.Error != nil {
+	if result := tx.Where("user_id = ?", f.Friend_1).First(&checkUser_1); result.Error != nil {
 		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 			return errors.New("데이터 베이스에 존재하지 않는 유저 아이디 입니다 (첫번째 친구)")
 		} else {
@@ -42,7 +43,7 @@ func (f *Friend) BeforeCreate(tx *gorm.DB) error {
 			return errors.New("데이터 베이스에서 유저 정보를 찾는데 오류가 발생했습니다 (첫번째 친구)")
 		}
 	} else {
-		if result = tx.Where("user_id = ?", f.Friend_2).First(&checkUser); result.Error != nil {
+		if result = tx.Where("user_id = ?", f.Friend_2).First(&checkUser_2); result.Error != nil {
 			if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 				return errors.New("데이터 베이스에 존재하지 않는 유저 아이디 입니다 (두번째 친구)")
 			} else {
