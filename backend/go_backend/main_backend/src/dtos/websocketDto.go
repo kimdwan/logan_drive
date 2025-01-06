@@ -115,3 +115,59 @@ type WebsocketStreamFriendAllowStatusDto struct {
 	Prepare_id       uuid.UUID `json:"prepare_id"`
 	Friend_title     string    `json:"friend_title"`
 }
+
+// 유저의 정보 컴퓨터 넘버와 친구 아이디를 가져옴
+type WebsocketComputerNumberAndFriendIdDto struct {
+	Computer_number uuid.UUID `json:"computer_number" validate:"required,uuid"`
+	Friend_id       uuid.UUID `json:"friend_id" validate:"required,uuid"`
+}
+
+type WebsocketComputerNumberAndFriendId interface {
+	WebsocketComputerNumberAndFriendIdParseDataAndCheckValidateAndSearchFunc(conn *websocket.Conn) error
+}
+
+func (w *WebsocketComputerNumberAndFriendIdDto) WebsocketComputerNumberAndFriendIdParseDataAndCheckValidateAndSearchFunc(conn *websocket.Conn) error {
+
+	// 데이터 읽어오기
+	var (
+		dataByte []byte
+		dataType int
+		err      error
+	)
+	if dataType, dataByte, err = conn.ReadMessage(); err != nil {
+		log.Println("시스템 오류: ", err.Error())
+		return errors.New("(json) 웹소켓에 데이터를 읽는데 오류가 발생했습니다")
+	}
+
+	// 데이터 타입 확인
+	if dataType != websocket.TextMessage {
+		log.Println("데이터 타입 오류")
+		return errors.New("데이터 타입을 다시 확인하시길 바랍니다")
+	}
+
+	// 데이터 입력
+	if err = json.Unmarshal(dataByte, w); err != nil {
+		log.Println("시스템 오류: ", err.Error())
+		return errors.New("(json) 웹소켓에 데이터를 가져오는데 오류가 발생했습니다")
+	}
+
+	// 데이터의 타입 검증
+	validate := validator.New()
+	if err = validate.Struct(w); err != nil {
+		log.Println("시스템 오류: ", err.Error())
+		return errors.New("(validate) 웹소켓에 데이터를 검증하는데 오류가 발생했습니다")
+	}
+
+	return nil
+}
+
+// 친구의 정보를 실시간으로 볼 수 있게 해주는 DTO
+type WebsocketCheckFriendDetailDto struct {
+	Friend_imgbase64 string    `json:"friend_imgbase64"`
+	Freind_imgtype   string    `json:"friend_imgtype"`
+	Friend_email     string    `json:"friend_email"`
+	Friend_nickname  string    `json:"friend_nickname"`
+	Friend_id        uuid.UUID `json:"friend_id"` // 친구와 맺은 정보가 들어있는 친구 데이터 (유저 아이디가 아님)
+	Friend_title     string    `json:"friend_title"`
+	Status           int       `json:"status"` // 지금 접속 상태인지 확인하는 로직 로그아웃 0, 접속중 1, 부재중 2(5분 이상 부재), 접속종료 3(1시간 이상 부재), 알수 없음 4
+}

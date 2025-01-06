@@ -33,6 +33,7 @@ type WebsocketService interface {
 	WebsocketUserStatusService(user_computer_number *dtos.WebsocketUserComputerNumberDto, friend_statuses *[]dtos.WebsocketFriendStatusDto, limit_count int) (int, error)
 	WebsocketFriendCheckMessagesService(check_friend *dtos.WebsocketFriendCheckDto, message_datas *[]dtos.WebsocketFriendMessageDto) (int, error)
 	WebsocketFriendAdmitFriendAppealService(computer_number_dto *dtos.WebsocketUserComputerNumberDto, user_datas *[]dtos.WebsocketStreamFriendAllowStatusDto) (int, error)
+	WebsocketFriendConfirmPrivateService(computerNumberAndFriendIdDto *dtos.WebsocketComputerNumberAndFriendIdDto) (int, error)
 }
 
 // websokcet으로 변환 시켜주는 함수
@@ -648,5 +649,155 @@ func WebsocketFriendAdmitGetPostPoneUserProfileWorkOnFunc(c context.Context, wg 
 		*websocketStreamDtos = append(*websocketStreamDtos, websocketStreamDto)
 		mutex.Unlock()
 	}
+
+}
+
+// 유저 한명의 정보를 실시간으로 수집하기 위해서
+func WebsocketFriendConfirmPrivateService(computerNumberAndFriendIdDto *dtos.WebsocketComputerNumberAndFriendIdDto, Friend_detail *dtos.WebsocketCheckFriendDetailDto) (int, error) {
+
+	var (
+		db          *gorm.DB = settings.DB
+		friend      servicemodel.User
+		friend_id   uuid.UUID
+		errorStatus int
+		err         error
+	)
+	c, cancel := context.WithTimeout(context.Background(), time.Second*100)
+	defer cancel()
+
+	// 친구의 정보를 찾고 컴퓨터 넘버가 맞다면 가져오고 아니면 반송하는 로직
+	if errorStatus, err = WebsocketFriendConfirmPrivateCheckFriendIdAndCreateDatabaseFunc(c, db, &friend, computerNumberAndFriendIdDto, &friend_id); err != nil {
+		return errorStatus, err
+	}
+
+	// 친구의 데이터를 가져오는 로직
+	var (
+		s3client *s3.Client = settings.S3Client
+	)
+	if err = WebsocketFriendConfirmPrivateSetoffFriendDataFunc(c, s3client, &friend, Friend_detail, &friend_id); err != nil {
+		return http.StatusInternalServerError, err
+	}
+
+	return 0, nil
+}
+
+type WebsocketFriendConfirmPrivate interface {
+	WebsocketFriendConfirmPrivateCheckFriendIdAndCreateDatabaseFunc(c context.Context, db *gorm.DB, friend *servicemodel.User, computerNumberAndFriendIdDto *dtos.WebsocketComputerNumberAndFriendIdDto, friend_id *uuid.UUID) (int, error)
+	WebsocketFriendConfirmPrivateSetoffFriendDataFunc(c context.Context, s3client *s3.Client, friend *servicemodel.User, friend_detail *dtos.WebsocketCheckFriendDetailDto, friend_id *uuid.UUID) error
+}
+
+// 친구 정보를 찾아볼 뿐만 아니라 컴퓨터 넘버가 맞는지 친구는 맞는지를 검증하는 로직
+func WebsocketFriendConfirmPrivateCheckFriendIdAndCreateDatabaseFunc(c context.Context, db *gorm.DB, friend *servicemodel.User, computerNumberAndFriendIdDto *dtos.WebsocketComputerNumberAndFriendIdDto, friend_id *uuid.UUID) (int, error) {
+
+	// 컴퓨터 넘버가 맞는지 확인하는 로직
+	var (
+		user servicemodel.User
+	)
+	result := db.WithContext(c).Where("computer_number = ?", computerNumberAndFriendIdDto.Computer_number).First(&user)
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			log.Println("컴퓨터 넘버를 다시 확인해야 함")
+			return http.StatusBadRequest, errors.New("컴퓨터 넘버를 다시 확인해주시길 바랍니다")
+		} else {
+			log.Println("시스템 오류: ", result.Error.Error())
+			return http.StatusInternalServerError, errors.New("데이터 베이스에서 컴퓨터 넘버에 해당하는 데이터 베이스를 찾는데 오류가 발생했습니다")
+		}
+	}
+
+	// 친구가 맞는지 확인하는 로직
+	var (
+		friend_model servicemodel.Friend
+	)
+	if result = db.WithContext(c).Where("friend_1 =? AND friend_2 = ?", user.User_id, computerNumberAndFriendIdDto.Friend_id).Or("friend_1 = ? AND friend_2 = ?", computerNumberAndFriendIdDto.Friend_id, user.User_id).First(&friend_model); result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			log.Println("둘은 친구관계가 아님")
+			return http.StatusBadRequest, errors.New("둘은 친구관계가 아닙니다")
+		} else {
+			log.Println("시스템 오류: ", result.Error.Error())
+			return http.StatusInternalServerError, errors.New("데이터 베이스에서 친구에 해당하는 데이터를 찾는데 오류가 발생했습니다")
+		}
+	}
+	*friend_id = friend_model.Friend_id
+
+	// 친구 데이터 가져오기
+	if result = db.WithContext(c).Where("user_id = ?", computerNumberAndFriendIdDto.Friend_id).First(friend); result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			log.Println("유저의 정보를 찾을 수 없음")
+			return http.StatusBadRequest, errors.New("해당 유저는 존재하지 않는 유저 입니다")
+		} else {
+			log.Println("시스템 오류: ", result.Error.Error())
+			return http.StatusInternalServerError, errors.New("데이터 베이스에서 유저의 정보를 찾는데 오류가 발생했습니다")
+		}
+	}
+
+	return 0, nil
+}
+
+// 친구의 디테일한 데이터를 가져오는 로직
+func WebsocketFriendConfirmPrivateSetoffFriendDataFunc(c context.Context, s3client *s3.Client, friend *servicemodel.User, friend_detail *dtos.WebsocketCheckFriendDetailDto, friend_id *uuid.UUID) error {
+
+	// 기본적으로 배정할 수 있는 데이터 배정
+	friend_detail.Friend_email = friend.Email
+	friend_detail.Friend_id = *friend_id
+	friend_detail.Friend_nickname = friend.Nickname
+	friend_detail.Friend_title = friend.User_title
+
+	// 이미지 관련
+	if friend.User_profile_img != nil {
+		var (
+			bucket_name        string = os.Getenv("AWS_BUCKET_NAME")
+			img_server_postion string = os.Getenv("FILE_SERVER_USER_PROFILE_IMG")
+			profile_img        string = *friend.User_profile_img
+		)
+		profile_img_path := filepath.Join(img_server_postion, friend.User_id.String(), profile_img)
+
+		s3_output, err := s3client.GetObject(c, &s3.GetObjectInput{
+			Bucket: aws.String(bucket_name),
+			Key:    aws.String(profile_img_path),
+		})
+		if err != nil {
+			log.Println("시스템 오류: ", err.Error())
+			return errors.New("s3에서 데이터를 찾는데 오류가 발생했습니다")
+		}
+		defer s3_output.Body.Close()
+
+		s3_profile_data, err := io.ReadAll(s3_output.Body)
+		if err != nil {
+			log.Println("시스템 오류: ", err.Error())
+			return errors.New("데이터를 byte화 하는데 오류가 발생했습니다")
+		}
+
+		s3_base_64_data := base64.StdEncoding.EncodeToString(s3_profile_data)
+
+		friend_detail.Friend_imgbase64 = s3_base_64_data
+
+		// 타입 지정
+		var (
+			profile_img_lists []string = strings.Split(profile_img, ".")
+		)
+		friend_detail.Freind_imgtype = profile_img_lists[len(profile_img_lists)-1]
+	}
+
+	// 유저의 status 검증
+	if friend.Computer_number != nil {
+		var (
+			friend_time           = friend.UpdatedAt
+			now_datas   time.Time = time.Now()
+			sub_datas             = now_datas.Sub(friend_time)
+		)
+
+		if sub_datas <= 5*time.Minute {
+			friend_detail.Status = 1
+		} else if sub_datas <= 1*time.Hour {
+			friend_detail.Status = 2
+		} else {
+			friend_detail.Status = 3
+		}
+
+	} else {
+		friend_detail.Status = 0
+	}
+
+	return nil
 
 }

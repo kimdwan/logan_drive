@@ -18,6 +18,7 @@ type WebsocketController interface {
 	WebsocketUserStatusController(ctx *gin.Context)
 	WebsocketFriendCheckMessagesController(ctx *gin.Context)
 	WebsocketFriendAdmitFriendAppealController(ctx *gin.Context)
+	WebsocketFriendConfirmPrivateController(ctx *gin.Context)
 }
 
 // 테스트용 컨트롤러
@@ -323,4 +324,90 @@ func WebsocketFriendAdmitFriendAppealController(ctx *gin.Context) {
 			return
 		}
 	}
+}
+
+// 유저 한명의 정보를 가져오는 로직
+func WebsocketFriendConfirmPrivateController(ctx *gin.Context) {
+
+	var (
+		conn *websocket.Conn
+		err  error
+	)
+
+	// conn 가져오기
+	if conn, err = services.WebsocketTranslateService(ctx); err != nil {
+		ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	defer conn.Close()
+
+	// 초반에 데이터 가져오기
+	var (
+		computerNumberAndFriendId dtos.WebsocketComputerNumberAndFriendIdDto
+		friend_detail_datas       dtos.WebsocketCheckFriendDetailDto
+		errorStatus               int
+	)
+	c, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// 초기 문제
+	go func() {
+		for {
+			if err = computerNumberAndFriendId.WebsocketComputerNumberAndFriendIdParseDataAndCheckValidateAndSearchFunc(conn); err != nil {
+				services.WebsocketSendErrorMsgService(conn, http.StatusBadRequest, err)
+				cancel()
+				return
+			} else {
+				if errorStatus, err = services.WebsocketFriendConfirmPrivateService(&computerNumberAndFriendId, &friend_detail_datas); err != nil {
+					services.WebsocketSendErrorMsgService(conn, errorStatus, err)
+					cancel()
+					return
+				} else {
+					if data_byte, err := json.Marshal(&friend_detail_datas); err != nil {
+						log.Println("시스템 오류: ", err.Error())
+						cancel()
+						return
+					} else {
+						if err = conn.WriteMessage(websocket.TextMessage, data_byte); err != nil {
+							log.Println("시스템 오류: ", err.Error())
+							cancel()
+							return
+						}
+					}
+				}
+			}
+		}
+	}()
+
+	ticker := time.NewTicker(time.Second * 5)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			if errorStatus, err = services.WebsocketFriendConfirmPrivateService(&computerNumberAndFriendId, &friend_detail_datas); err != nil {
+				services.WebsocketSendErrorMsgService(conn, errorStatus, err)
+				cancel()
+				return
+			} else {
+				if data_byte, err := json.Marshal(&friend_detail_datas); err != nil {
+					log.Println("시스템 오류: ", err.Error())
+					cancel()
+					return
+				} else {
+					if err = conn.WriteMessage(websocket.TextMessage, data_byte); err != nil {
+						log.Println("시스템 오류: ", err.Error())
+						cancel()
+						return
+					}
+				}
+			}
+		case <-c.Done():
+			return
+		}
+	}
+
 }

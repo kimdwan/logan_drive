@@ -20,4 +20,5 @@ func WebsocketRouter(router *gin.Engine) {
 	wsfriendrouter := wsrouter.Group("friend")
 	wsfriendrouter.GET("check/message", controllers.WebsocketFriendCheckMessagesController)
 	wsfriendrouter.GET("check/permit", controllers.WebsocketFriendAdmitFriendAppealController)
+	wsfriendrouter.GET("confirm/private", controllers.WebsocketFriendConfirmPrivateController)
 }
